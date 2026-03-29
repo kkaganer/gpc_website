@@ -1,0 +1,26 @@
+export const events = [
+  {
+    id: 'easter-egg-hunt',
+    title: 'Easter Egg Hunt',
+    date: '2025-04-19',
+    time: '10:00 - 12:00',
+    location: 'Greenwich Park, London',
+    description: 'Join us for a fun-filled Easter Egg Hunt in Greenwich Park! Activities include egg hunting, face painting, and arts & crafts. Perfect for children of all ages.',
+    image: '/images/easter-egg-hunt.jpg',
+    ticketUrl: 'https://www.zeffy.com/en-GB/ticketing/easter-egg-hunt-gpc',
+    price: 'Free',
+    status: 'past',
+  },
+  {
+    id: 'easter-egg-beer-hunt',
+    title: 'Easter Egg & Beer Hunt',
+    date: '2025-04-19',
+    time: '14:00 - 17:00',
+    location: 'Greenwich Park, London',
+    description: 'An adults-only Easter event! Hunt for eggs AND craft beers hidden around the park. A fun afternoon out for parents while the kids are with their other halves.',
+    image: '/images/easter-beer-hunt.jpg',
+    ticketUrl: 'https://www.zeffy.com/en-GB/ticketing/easter-egg-beer-hunt-gpc',
+    price: 'Free',
+    status: 'past',
+  },
+];

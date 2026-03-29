@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80" viewBox="0 0 200 80">
+  <rect width="200" height="80" rx="8" fill="#f0e6f6" stroke="#2d1b4e" stroke-width="2"/>
+  <text x="100" y="35" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="bold" fill="#2d1b4e">Working Mums</text>
+  <text x="100" y="55" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="bold" fill="#2d1b4e">Club</text>
+</svg>
