@@ -1,0 +1,79 @@
+import { Calendar, MapPin, Clock, Users, Ticket } from 'lucide-react'
+
+export default function LondonEventCard({ event, isActive, onClick }) {
+  const formattedDate = new Date(event.date + 'T00:00:00').toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  })
+
+  return (
+    <div
+      onClick={() => onClick?.(event.id)}
+      className={`border-b border-gray-100 px-4 py-4 cursor-pointer transition-colors hover:bg-primary/5 ${
+        isActive ? 'bg-primary/5 border-l-2 border-l-primary' : ''
+      }`}
+    >
+      {/* Badges */}
+      <div className="flex items-center gap-2 mb-1.5">
+        {event.category && (
+          <span className="text-[11px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+            {event.category}
+          </span>
+        )}
+        {event.is_free && (
+          <span className="text-[11px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+            Free
+          </span>
+        )}
+      </div>
+
+      {/* Title + Venue */}
+      <h3 className="font-heading font-bold text-dark text-[15px] leading-snug">
+        {event.title}
+        {event.venue && (
+          <span className="text-gray-400 font-normal"> – {event.venue}</span>
+        )}
+      </h3>
+
+      {/* Description */}
+      {event.description && (
+        <p className="text-gray-500 text-xs mt-1 line-clamp-2 leading-relaxed">
+          {event.description}
+        </p>
+      )}
+
+      {/* Meta row */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-gray-500">
+        <span className="flex items-center gap-1">
+          <Calendar size={12} className="text-primary" />
+          {formattedDate}
+        </span>
+        {event.time && (
+          <span className="flex items-center gap-1">
+            <Clock size={12} className="text-primary" />
+            {event.time}
+          </span>
+        )}
+        {event.price && !event.is_free && (
+          <span className="flex items-center gap-1">
+            <Ticket size={12} className="text-primary" />
+            {event.price}
+          </span>
+        )}
+        {event.age_range && (
+          <span className="flex items-center gap-1">
+            <Users size={12} className="text-primary" />
+            Age {event.age_range}
+          </span>
+        )}
+      </div>
+
+      {/* Location */}
+      <p className="flex items-center gap-1 text-xs text-gray-400 mt-1.5">
+        <MapPin size={12} className="shrink-0" />
+        {event.location}
+      </p>
+    </div>
+  )
+}

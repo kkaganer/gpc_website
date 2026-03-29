@@ -10,7 +10,7 @@ const statusLabels = {
 }
 
 export default function EventCard({ event }) {
-  const { id, title, date, location, description, image, status } = event
+  const { slug, title, date, location, description, image_url, image, status } = event
 
   const formattedDate = new Date(date + 'T00:00:00').toLocaleDateString('en-GB', {
     weekday: 'long',
@@ -22,7 +22,7 @@ export default function EventCard({ event }) {
   return (
     <Card>
       <div className="bg-gray-50">
-        <img src={image} alt={title} className="w-full h-auto" loading="lazy" />
+        <img src={image_url || image} alt={title} className="w-full h-auto" loading="lazy" />
       </div>
       <div className="p-6">
         <Badge variant={status}>{statusLabels[status] || status}</Badge>
@@ -37,7 +37,7 @@ export default function EventCard({ event }) {
         </div>
         <p className="text-gray-600 mt-3 text-sm line-clamp-2">{description}</p>
         <div className="mt-4">
-          <Button variant="secondary" href={`/events/${id}`}>
+          <Button variant="secondary" href={`/events/${slug || id}`}>
             View Details
           </Button>
         </div>

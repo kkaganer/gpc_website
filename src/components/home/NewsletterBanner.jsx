@@ -1,16 +1,34 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Mail } from 'lucide-react';
-import { ORG } from '../../utils/constants';
+import { useState } from 'react'
+import { motion } from 'framer-motion'
+import { Mail, CheckCircle2 } from 'lucide-react'
+import { ORG } from '../../utils/constants'
+import { supabase } from '../../lib/supabase'
 
 export default function NewsletterBanner() {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState('')
+  const [status, setStatus] = useState('idle') // idle | submitting | success | error
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    // TODO: Replace with Brevo form integration
-    setEmail('');
-  };
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setStatus('submitting')
+
+    try {
+      const { error } = await supabase.from('newsletter_subscribers').insert({ email })
+      if (error) {
+        if (error.code === '23505') {
+          // Duplicate email — treat as success
+          setStatus('success')
+        } else {
+          throw error
+        }
+      } else {
+        setStatus('success')
+      }
+      setEmail('')
+    } catch {
+      setStatus('error')
+    }
+  }
 
   return (
     <motion.section
@@ -25,23 +43,36 @@ export default function NewsletterBanner() {
           <Mail size={16} className="text-primary shrink-0" />
           Stay in the loop — join {ORG.memberCount} Greenwich parents
         </p>
-        <form onSubmit={handleSubmit} className="flex gap-2">
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Your email"
-            required
-            className="rounded-full py-2 px-4 text-sm bg-white/10 text-white placeholder-white/50 border border-white/20 focus:border-primary focus:outline-none w-48"
-          />
-          <button
-            type="submit"
-            className="bg-primary text-white rounded-full py-2 px-5 text-sm font-bold hover:bg-primary/90 transition-colors focus:ring-2 focus:ring-primary focus:outline-none"
-          >
-            Subscribe
-          </button>
-        </form>
+
+        {status === 'success' ? (
+          <span className="flex items-center gap-2 text-green-400 text-sm font-semibold">
+            <CheckCircle2 size={16} />
+            You're subscribed!
+          </span>
+        ) : (
+          <form onSubmit={handleSubmit} className="flex gap-2">
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Your email"
+              required
+              className="rounded-full py-2 px-4 text-sm bg-white/10 text-white placeholder-white/50 border border-white/20 focus:border-primary focus:outline-none w-48"
+            />
+            <button
+              type="submit"
+              disabled={status === 'submitting'}
+              className="bg-primary text-white rounded-full py-2 px-5 text-sm font-bold hover:bg-primary/90 transition-colors focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50"
+            >
+              {status === 'submitting' ? '...' : 'Subscribe'}
+            </button>
+          </form>
+        )}
+
+        {status === 'error' && (
+          <span className="text-red-400 text-xs">Something went wrong. Try again.</span>
+        )}
       </div>
     </motion.section>
-  );
+  )
 }
