@@ -35,26 +35,26 @@
 - [ x] Enter an email and password (this is your admin login for `/admin`)
 - [ x] Click **Create User**
 - [x ] Use these credentials to sign in at `yoursite.com/admin/login`
-<!-- 
+
 ## 6. Set Up OpenAI API (for AI features)
-- [ ] Go to https://platform.openai.com and create an account
-- [ ] Go to API Keys and generate a new secret key
-- [ ] In Supabase dashboard, go to **Edge Functions > Secrets**
-- [ ] Add a secret: name = `OPENAI_API_KEY`, value = your key
+- [x ] Go to https://platform.openai.com and create an account
+- [x ] Go to API Keys and generate a new secret key
+- [ x] In Supabase dashboard, go to **Edge Functions > Secrets**
+- [ x] Add a secret: name = `OPENAI_API_KEY`, value = your key -->
 
 ## 7. Deploy Edge Functions
-- [ ] Install the Supabase CLI: `npm install -g supabase`
-- [ ] Run `supabase login` and authenticate
-- [ ] Link your project: `supabase link --project-ref YOUR_PROJECT_REF`
+- [x] Install the Supabase CLI: `npm install -g supabase`
+- [x ] Run `supabase login` and authenticate
+- [x ] Link your project: `supabase link --project-ref YOUR_PROJECT_REF`
   - (Find your project ref in Supabase dashboard URL: `supabase.com/dashboard/project/YOUR_PROJECT_REF`)
-- [ ] Deploy the discover-events function: `supabase functions deploy discover-events`
-- [ ] Deploy the newsletter function: `supabase functions deploy generate-newsletter`
+- [x ] Deploy the discover-events function: `supabase functions deploy discover-events`
+- [x ] Deploy the newsletter function: `supabase functions deploy generate-newsletter`
 
 ## 8. Deploy to Vercel
-- [ ] Push the code to GitHub
-- [ ] In Vercel, redeploy (or it auto-deploys if connected to your repo)
-- [ ] Verify the environment variables are set (step 2)
-- [ ] Visit your site and confirm events load from the database
+- [ x] Push the code to GitHub
+- [ x] In Vercel, redeploy (or it auto-deploys if connected to your repo)
+- [x ] Verify the environment variables are set (step 2)
+- [x ] Visit your site and confirm events load from the database
 
 ## 9. Verify Everything Works
 - [ ] Public site: homepage loads, events display correctly
