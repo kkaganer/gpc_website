@@ -11,19 +11,20 @@ export default async function handler(req, res) {
   }
 
   // Save to Supabase
-  const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  )
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 
-  const { error: dbError } = await supabase
-    .from('newsletter_subscribers')
-    .insert({ email })
+  if (supabaseUrl && supabaseKey) {
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    const { error: dbError } = await supabase
+      .from('newsletter_subscribers')
+      .insert({ email })
 
-  // Ignore duplicate email errors (23505)
-  if (dbError && dbError.code !== '23505') {
-    console.error('Database error:', dbError)
-    return res.status(500).json({ error: 'Failed to save subscriber' })
+    if (dbError && dbError.code !== '23505') {
+      console.error('Database error:', dbError)
+    }
+  } else {
+    console.error('Supabase env vars missing. SUPABASE_URL:', !!process.env.SUPABASE_URL, 'VITE_SUPABASE_URL:', !!process.env.VITE_SUPABASE_URL)
   }
 
   // Add to Brevo
