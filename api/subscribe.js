@@ -28,7 +28,12 @@ export default async function handler(req, res) {
 
   // Add to Brevo
   const brevoKey = process.env.BREVO_API_KEY
-  if (brevoKey) {
+  let brevoStatus = 'skipped'
+
+  if (!brevoKey) {
+    console.error('BREVO_API_KEY is not set')
+    brevoStatus = 'no_key'
+  } else {
     try {
       const brevoRes = await fetch('https://api.brevo.com/v3/contacts', {
         method: 'POST',
@@ -43,16 +48,18 @@ export default async function handler(req, res) {
         }),
       })
 
-      if (!brevoRes.ok) {
-        const brevoData = await brevoRes.json()
-        if (brevoData.code !== 'duplicate_parameter') {
-          console.error('Brevo error:', brevoData)
-        }
+      const brevoData = await brevoRes.json().catch(() => ({}))
+      if (brevoRes.ok || brevoData.code === 'duplicate_parameter') {
+        brevoStatus = 'ok'
+      } else {
+        console.error('Brevo error:', brevoRes.status, brevoData)
+        brevoStatus = 'error'
       }
     } catch (err) {
       console.error('Brevo request failed:', err)
+      brevoStatus = 'error'
     }
   }
 
-  return res.status(200).json({ success: true })
+  return res.status(200).json({ success: true, brevo: brevoStatus })
 }
