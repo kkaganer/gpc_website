@@ -6,14 +6,42 @@ import EventMap from '../components/whatson/EventMap'
 import SubmitEventModal from '../components/whatson/SubmitEventModal'
 import { useLondonEvents } from '../hooks/useLondonEvents'
 
+function ageMatchesRange(age, range) {
+  if (!range) return true
+  const r = range.trim().toLowerCase()
+  if (r === 'all ages') return true
+  if (r === 'pre-walkers' || r === 'pre-crawlers') return age === 0
+  if (r === 'under 5') return age < 5
+  // Match "X+" pattern
+  const plusMatch = r.match(/^(\d+)\+$/)
+  if (plusMatch) return age >= parseInt(plusMatch[1])
+  // Match "X-Y" pattern (handle both - and en-dash)
+  const rangeMatch = r.match(/^(\d+)\s*[-–]\s*(\d+)$/)
+  if (rangeMatch) return age >= parseInt(rangeMatch[1]) && age <= parseInt(rangeMatch[2])
+  return true
+}
+
+function getDistanceMiles(lat1, lng1, lat2, lng2) {
+  const R = 3959 // Earth's radius in miles
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLng = ((lng2 - lng1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
 const defaultFilters = {
-  area: 'All',
+  postcode: '',
+  postcodeLat: null,
+  postcodeLng: null,
+  radius: 5,
   datePreset: 'all',
   dateFrom: null,
   dateTo: null,
   category: 'All',
   price: 'All',
-  ageRange: '',
+  childAge: '',
 }
 
 export default function WhatsOn() {
@@ -25,16 +53,20 @@ export default function WhatsOn() {
   const listRef = useRef(null)
 
   const { events: rawEvents, loading, error } = useLondonEvents({
-    area: filters.area,
     dateFrom: filters.dateFrom,
     dateTo: filters.dateTo,
     category: filters.category,
   })
 
-  // Client-side filtering for price and age (not in Supabase query)
+  // Client-side filtering for price, age, and distance
   const events = rawEvents.filter((e) => {
     if (filters.price === 'Free' && !e.is_free) return false
     if (filters.price === 'Paid' && e.is_free) return false
+    if (filters.childAge !== '' && !ageMatchesRange(parseInt(filters.childAge), e.age_range)) return false
+    if (filters.postcodeLat && filters.postcodeLng && e.lat && e.lng) {
+      const dist = getDistanceMiles(filters.postcodeLat, filters.postcodeLng, e.lat, e.lng)
+      if (dist > filters.radius) return false
+    }
     return true
   })
 

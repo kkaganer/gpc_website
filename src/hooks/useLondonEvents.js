@@ -1,22 +1,23 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 
-export function useLondonEvents({ area, dateFrom, dateTo, category } = {}) {
+export function useLondonEvents({ dateFrom, dateTo, category } = {}) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   const fetchEvents = useCallback(async () => {
     setLoading(true)
+    const today = new Date().toISOString().split('T')[0]
     let query = supabase
       .from('london_events')
       .select('*')
       .eq('approved', true)
+      .gte('date', today)
       .order('date', { ascending: true })
 
-    if (area && area !== 'All') query = query.eq('area', area)
     if (category && category !== 'All') query = query.eq('category', category)
-    if (dateFrom) query = query.gte('date', dateFrom)
+    if (dateFrom && dateFrom > today) query = query.gte('date', dateFrom)
     if (dateTo) query = query.lte('date', dateTo)
 
     const { data, error: fetchError } = await query
@@ -28,7 +29,7 @@ export function useLondonEvents({ area, dateFrom, dateTo, category } = {}) {
       setEvents(data || [])
     }
     setLoading(false)
-  }, [area, dateFrom, dateTo, category])
+  }, [dateFrom, dateTo, category])
 
   useEffect(() => {
     fetchEvents()

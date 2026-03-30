@@ -28,34 +28,31 @@ Deno.serve(async (req) => {
     const fromDate = now.toISOString().split('T')[0]
     const toDate = twoWeeksOut.toISOString().split('T')[0]
 
-    const prompt = `Find family-friendly events happening in London between ${fromDate} and ${toDate}. Focus especially on Greenwich, Lewisham, Southwark, and South East London areas, but also include notable London-wide events.
+    const prompt = `Today is ${fromDate}. Find family-friendly events in London happening ONLY between ${fromDate} and ${toDate}. EVERY event must be on or after ${fromDate} — do NOT include past events.
 
-Check these sources specifically:
-- Eventbrite London family events
-- Time Out London families section
-- Kidrated
-- Greenwich.co.uk events
-- Little Day Out London
-- Mumsnet local events
-- Local council event listings (Royal Borough of Greenwich, Lewisham Council)
+Search these sources: Eventbrite London family events, Time Out London kids section, Kidrated, visitgreenwich.org.uk, Royal Museums Greenwich (National Maritime Museum, Cutty Sark), Horniman Museum, Mudchute Farm, Greenwich Theatre, The Albany Deptford, Greenwich/Lewisham/Southwark council event pages.
 
-For each event, provide this information in a JSON array:
+Focus on SE London (Greenwich, Lewisham, Southwark, Deptford, Blackheath, Woolwich, Eltham, Bromley) but include notable London-wide family events too.
+
+Include a mix of: museum activities, theatre, outdoor events, craft workshops, baby/toddler groups, sports, food markets, seasonal activities.
+
+Return a JSON array of 15-20 events. Each event object must have:
 - title: event name
-- venue: venue/place name (e.g. "National Maritime Museum", "Greenwich Park")
-- date: YYYY-MM-DD format
-- time: start-end time if available (e.g. "10:00 - 14:00")
-- location: full address or area description
-- area: one of "Greenwich", "Lewisham", "Southwark", "Central London", "Tower Hamlets", "Bromley", or the most relevant London area
-- lat: latitude as a number (e.g. 51.4769)
-- lng: longitude as a number (e.g. -0.0005)
-- description: 1-2 sentence description
-- url: link to the event page
-- category: one of "Family", "Outdoor", "Arts", "Sports", "Music", "Food"
-- age_range: e.g. "0-5", "5-12", "All ages"
-- price: the price or "Free"
+- venue: place name (e.g. "Horniman Museum")
+- date: YYYY-MM-DD (must be ${fromDate} to ${toDate})
+- time: e.g. "10:00 - 14:00" or null
+- location: address or area
+- area: "Greenwich" | "Lewisham" | "Southwark" | "Central London" | "Tower Hamlets" | "Bromley"
+- lat: number (e.g. 51.4769)
+- lng: number (e.g. -0.0005)
+- description: 1-2 sentences
+- url: direct link to event page
+- category: "Family" | "Outdoor" | "Arts" | "Sports" | "Music" | "Food"
+- age_range: e.g. "All ages", "0-5"
+- price: e.g. "Free", "£5"
 - is_free: true/false
 
-Return ONLY a valid JSON array with no additional text. Aim for 10-20 events.`
+Return ONLY a valid JSON array. No markdown, no explanation.`
 
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -83,20 +80,37 @@ Return ONLY a valid JSON array with no additional text. Aim for 10-20 events.`
 
     const result = await response.json()
 
-    // Extract text content from the Responses API output
-    let content = ''
-    for (const item of result.output || []) {
-      if (item.type === 'message') {
-        for (const block of item.content || []) {
-          if (block.type === 'output_text') {
-            content += block.text
-          }
-        }
-      }
+    // Debug: log the output structure
+    const outputTypes = (result.output || []).map((item: any) => item.type)
+    console.log('OpenAI output types:', JSON.stringify(outputTypes))
+
+    // Extract text from the message in the Responses API output
+    // Use filter instead of findLast for Deno compatibility
+    const messages = (result.output || []).filter((item: any) => item.type === 'message')
+    const lastMessage = messages[messages.length - 1]
+
+    if (!lastMessage) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'No message found in OpenAI response',
+          debug: { outputTypes, outputLength: (result.output || []).length, rawKeys: Object.keys(result) },
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
+    const content = lastMessage.content?.[0]?.text || ''
+
     if (!content) {
-      throw new Error('No text content in OpenAI response')
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'No text content in message',
+          debug: { messageKeys: Object.keys(lastMessage), contentArray: lastMessage.content },
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     // Parse the JSON from the response (handle potential markdown code blocks)
@@ -104,16 +118,31 @@ Return ONLY a valid JSON array with no additional text. Aim for 10-20 events.`
     try {
       const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
       events = JSON.parse(cleaned)
-    } catch {
-      throw new Error('Failed to parse AI response as JSON')
+    } catch (parseError) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Failed to parse AI response as JSON',
+          debug: { contentPreview: content.substring(0, 500) },
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     if (!Array.isArray(events)) {
-      throw new Error('AI response is not an array')
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'AI response is not an array',
+          debug: { type: typeof events },
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
     }
 
     // Insert events as pending (approved = false)
     let inserted = 0
+    const insertErrors: string[] = []
     for (const event of events) {
       if (!event.title || !event.date || !event.location) continue
 
@@ -136,11 +165,15 @@ Return ONLY a valid JSON array with no additional text. Aim for 10-20 events.`
         approved: false,
       })
 
-      if (!error) inserted++
+      if (error) {
+        insertErrors.push(`${event.title}: ${error.message}`)
+      } else {
+        inserted++
+      }
     }
 
     return new Response(
-      JSON.stringify({ success: true, discovered: events.length, inserted }),
+      JSON.stringify({ success: true, discovered: events.length, inserted, insertErrors: insertErrors.length > 0 ? insertErrors : undefined }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {

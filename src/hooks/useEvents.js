@@ -3,6 +3,14 @@ import { supabase } from '../lib/supabase'
 
 const statusOrder = { upcoming: 0, 'sold-out': 1, past: 2 }
 
+function computeStatus(event) {
+  if (event.status === 'sold-out') return 'sold-out'
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const eventDate = new Date(event.date + 'T00:00:00')
+  return eventDate >= today ? 'upcoming' : 'past'
+}
+
 export function useEvents({ featured, status, limit } = {}) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
@@ -25,7 +33,8 @@ export function useEvents({ featured, status, limit } = {}) {
         setError(fetchError.message)
         setEvents([])
       } else {
-        const sorted = (data || []).sort(
+        const withStatus = (data || []).map(e => ({ ...e, status: computeStatus(e) }))
+        const sorted = withStatus.sort(
           (a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
         )
         setEvents(sorted)
@@ -58,7 +67,7 @@ export function useEvent(slug) {
         setError(fetchError.message)
         setEvent(null)
       } else {
-        setEvent(data)
+        setEvent(data ? { ...data, status: computeStatus(data) } : null)
       }
       setLoading(false)
     }

@@ -52,7 +52,7 @@ export default function ImageUpload({ value, onChange }) {
       )}
       {/* Fallback: paste a URL */}
       <input
-        type="url"
+        type="text"
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Or paste an image URL"

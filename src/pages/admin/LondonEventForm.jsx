@@ -282,7 +282,7 @@ export default function LondonEventForm() {
         <label className="block">
           <span className="text-sm font-semibold text-dark">Image URL</span>
           <input
-            type="url"
+            type="text"
             value={form.image_url}
             onChange={(e) => set('image_url', e.target.value)}
             className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"

@@ -45,7 +45,7 @@ export default function LondonEventsManager() {
       if (fnError) throw fnError
       refetch()
     } catch (err) {
-      setDiscoverError('Failed to discover events. Make sure the edge function is deployed and the Perplexity API key is configured.')
+      setDiscoverError('Failed to discover events. Make sure the edge function is deployed and the OPENAI_API_KEY secret is configured in Supabase.')
     } finally {
       setDiscovering(false)
     }

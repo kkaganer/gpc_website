@@ -112,17 +112,9 @@ Return ONLY the complete HTML document, starting with <!DOCTYPE html>. No markdo
 
     const result = await response.json()
 
-    // Extract text content from the Responses API output
-    let htmlContent = ''
-    for (const item of result.output || []) {
-      if (item.type === 'message') {
-        for (const block of item.content || []) {
-          if (block.type === 'output_text') {
-            htmlContent += block.text
-          }
-        }
-      }
-    }
+    // Extract text from the last message in the Responses API output
+    const message = (result.output || []).findLast((item: any) => item.type === 'message')
+    let htmlContent = message?.content?.[0]?.text || ''
 
     // Clean up any markdown wrapping
     htmlContent = htmlContent.replace(/```html\n?/g, '').replace(/```\n?/g, '').trim()
