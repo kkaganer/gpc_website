@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Mail, CheckCircle2 } from 'lucide-react'
 import { ORG } from '../../utils/constants'
-import { supabase } from '../../lib/supabase'
 
 export default function NewsletterBanner() {
   const [email, setEmail] = useState('')
@@ -13,17 +12,13 @@ export default function NewsletterBanner() {
     setStatus('submitting')
 
     try {
-      const { error } = await supabase.from('newsletter_subscribers').insert({ email })
-      if (error) {
-        if (error.code === '23505') {
-          // Duplicate email — treat as success
-          setStatus('success')
-        } else {
-          throw error
-        }
-      } else {
-        setStatus('success')
-      }
+      const res = await fetch('/api/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      if (!res.ok) throw new Error('Subscribe failed')
+      setStatus('success')
       setEmail('')
     } catch {
       setStatus('error')
