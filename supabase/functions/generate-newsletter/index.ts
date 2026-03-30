@@ -11,9 +11,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY')
-    if (!perplexityKey) {
-      throw new Error('PERPLEXITY_API_KEY is not configured')
+    const openaiKey = Deno.env.get('OPENAI_API_KEY')
+    if (!openaiKey) {
+      throw new Error('OPENAI_API_KEY is not configured')
     }
 
     const supabase = createClient(
@@ -86,35 +86,50 @@ DESIGN REQUIREMENTS:
 
 Return ONLY the complete HTML document, starting with <!DOCTYPE html>. No markdown, no explanation.`
 
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${perplexityKey}`,
+        'Authorization': `Bearer ${openaiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'sonar',
-        messages: [
+        model: 'gpt-4o',
+        tools: [{ type: 'web_search' }],
+        input: [
           {
             role: 'system',
             content: 'You are an expert email HTML developer. Generate production-ready HTML email newsletters with inline styles and table-based layouts. Return only HTML, no markdown.',
           },
           { role: 'user', content: prompt },
         ],
-        temperature: 0.3,
       }),
     })
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(`Perplexity API error: ${response.status} ${errorText}`)
+      throw new Error(`OpenAI API error: ${response.status} ${errorText}`)
     }
 
     const result = await response.json()
-    let htmlContent = result.choices?.[0]?.message?.content || ''
+
+    // Extract text content from the Responses API output
+    let htmlContent = ''
+    for (const item of result.output || []) {
+      if (item.type === 'message') {
+        for (const block of item.content || []) {
+          if (block.type === 'output_text') {
+            htmlContent += block.text
+          }
+        }
+      }
+    }
 
     // Clean up any markdown wrapping
     htmlContent = htmlContent.replace(/```html\n?/g, '').replace(/```\n?/g, '').trim()
+
+    if (!htmlContent) {
+      throw new Error('No content generated')
+    }
 
     // Save the draft
     const title = `GPC Newsletter - Week of ${weekOfDate}`

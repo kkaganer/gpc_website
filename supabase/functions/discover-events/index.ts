@@ -11,9 +11,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const perplexityKey = Deno.env.get('PERPLEXITY_API_KEY')
-    if (!perplexityKey) {
-      throw new Error('PERPLEXITY_API_KEY is not configured')
+    const openaiKey = Deno.env.get('OPENAI_API_KEY')
+    if (!openaiKey) {
+      throw new Error('OPENAI_API_KEY is not configured')
     }
 
     const supabase = createClient(
@@ -57,32 +57,47 @@ For each event, provide this information in a JSON array:
 
 Return ONLY a valid JSON array with no additional text. Aim for 10-20 events.`
 
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${perplexityKey}`,
+        'Authorization': `Bearer ${openaiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'sonar',
-        messages: [
+        model: 'gpt-4o',
+        tools: [{ type: 'web_search' }],
+        input: [
           {
             role: 'system',
             content: 'You are a helpful assistant that finds local events. Always respond with valid JSON arrays only, no markdown or extra text.',
           },
           { role: 'user', content: prompt },
         ],
-        temperature: 0.1,
       }),
     })
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(`Perplexity API error: ${response.status} ${errorText}`)
+      throw new Error(`OpenAI API error: ${response.status} ${errorText}`)
     }
 
     const result = await response.json()
-    const content = result.choices?.[0]?.message?.content || '[]'
+
+    // Extract text content from the Responses API output
+    let content = ''
+    for (const item of result.output || []) {
+      if (item.type === 'message') {
+        for (const block of item.content || []) {
+          if (block.type === 'output_text') {
+            content += block.text
+          }
+        }
+      }
+    }
+
+    if (!content) {
+      throw new Error('No text content in OpenAI response')
+    }
 
     // Parse the JSON from the response (handle potential markdown code blocks)
     let events: any[]
@@ -117,7 +132,7 @@ Return ONLY a valid JSON array with no additional text. Aim for 10-20 events.`
         age_range: event.age_range || null,
         price: event.price || null,
         is_free: event.is_free ?? (event.price?.toLowerCase() === 'free'),
-        source: 'perplexity',
+        source: 'openai',
         approved: false,
       })
 

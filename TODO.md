@@ -15,32 +15,32 @@
   - `VITE_SUPABASE_ANON_KEY`
 
 ## 3. Run the Database Migrations
-- [ ] In Supabase dashboard, go to **SQL Editor**
-- [ ] Click "New Query"
-- [ ] Copy the entire contents of `supabase/migrations/001_create_tables.sql` and paste it in
-- [ ] Click **Run** — this creates all tables, policies, triggers, and seeds your existing events
-- [ ] Run another new query with `supabase/migrations/002_add_map_fields.sql` — adds map coordinates and venue fields
-- [ ] Run another new query with `supabase/migrations/003_newsletter_subscribers.sql` — adds the newsletter signup table
+- [x ] In Supabase dashboard, go to **SQL Editor**
+- [x ] Click "New Query"
+- [x ] Copy the entire contents of `supabase/migrations/001_create_tables.sql` and paste it in
+- [ x] Click **Run** — this creates all tables, policies, triggers, and seeds your existing events
+- [ x] Run another new query with `supabase/migrations/002_add_map_fields.sql` — adds map coordinates and venue fields
+- [ x] Run another new query with `supabase/migrations/003_newsletter_subscribers.sql` — adds the newsletter signup table
 
 ## 4. Create a Storage Bucket
-- [ ] In Supabase dashboard, go to **Storage**
-- [ ] Click **New Bucket**
-- [ ] Name it `event-images`
-- [ ] Toggle **Public bucket** ON
-- [ ] Click **Create**
+- [x ] In Supabase dashboard, go to **Storage**
+- [ x] Click **New Bucket**
+- [ x] Name it `event-images`
+- [ x] Toggle **Public bucket** ON
+- [ x] Click **Create**
 
 ## 5. Create an Admin User
-- [ ] In Supabase dashboard, go to **Authentication > Users**
-- [ ] Click **Add User** > **Create New User**
-- [ ] Enter an email and password (this is your admin login for `/admin`)
-- [ ] Click **Create User**
-- [ ] Use these credentials to sign in at `yoursite.com/admin/login`
-
-## 6. Set Up Perplexity API (for AI features)
-- [ ] Go to https://www.perplexity.ai and create an API account
-- [ ] Generate an API key from your Perplexity dashboard
+- [x ] In Supabase dashboard, go to **Authentication > Users**
+- [x ] Click **Add User** > **Create New User**
+- [ x] Enter an email and password (this is your admin login for `/admin`)
+- [ x] Click **Create User**
+- [x ] Use these credentials to sign in at `yoursite.com/admin/login`
+<!-- 
+## 6. Set Up OpenAI API (for AI features)
+- [ ] Go to https://platform.openai.com and create an account
+- [ ] Go to API Keys and generate a new secret key
 - [ ] In Supabase dashboard, go to **Edge Functions > Secrets**
-- [ ] Add a secret: name = `PERPLEXITY_API_KEY`, value = your key
+- [ ] Add a secret: name = `OPENAI_API_KEY`, value = your key
 
 ## 7. Deploy Edge Functions
 - [ ] Install the Supabase CLI: `npm install -g supabase`
