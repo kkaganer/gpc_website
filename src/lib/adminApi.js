@@ -33,17 +33,6 @@ export async function createAdminUser(email, password) {
   return data.user
 }
 
-export async function inviteAdminUser(email) {
-  const res = await fetch('/api/admin/users', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-    body: JSON.stringify({ email, invite: true }),
-  })
-  const data = await parseResponse(res)
-  if (!res.ok) throw new Error(data.error || 'Failed to invite user')
-  return data.user
-}
-
 export async function deleteAdminUser(userId) {
   const res = await fetch('/api/admin/users', {
     method: 'DELETE',

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Trash2, X } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
-import { fetchAdminUsers, createAdminUser, inviteAdminUser, deleteAdminUser } from '../../lib/adminApi'
+import { fetchAdminUsers, createAdminUser, deleteAdminUser } from '../../lib/adminApi'
 import ConfirmModal from '../../components/admin/ConfirmModal'
 
 export default function UsersManager() {
@@ -160,7 +160,6 @@ export default function UsersManager() {
 }
 
 function AddUserModal({ onClose, onCreated }) {
-  const [mode, setMode] = useState('invite')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [saving, setSaving] = useState(false)
@@ -171,11 +170,7 @@ function AddUserModal({ onClose, onCreated }) {
     setSaving(true)
     setError(null)
     try {
-      if (mode === 'invite') {
-        await inviteAdminUser(email)
-      } else {
-        await createAdminUser(email, password)
-      }
+      await createAdminUser(email, password)
       onCreated()
     } catch (err) {
       setError(err.message)
@@ -201,28 +196,6 @@ function AddUserModal({ onClose, onCreated }) {
             </div>
           )}
 
-          {/* Mode toggle */}
-          <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
-            <button
-              type="button"
-              onClick={() => setMode('invite')}
-              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                mode === 'invite' ? 'bg-white shadow-sm text-dark' : 'text-gray-500 hover:text-dark'
-              }`}
-            >
-              Magic Link Invite
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('password')}
-              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                mode === 'password' ? 'bg-white shadow-sm text-dark' : 'text-gray-500 hover:text-dark'
-              }`}
-            >
-              Set Password
-            </button>
-          </div>
-
           <div>
             <label className="block text-sm font-semibold text-dark mb-1">Email *</label>
             <input
@@ -235,24 +208,21 @@ function AddUserModal({ onClose, onCreated }) {
             />
           </div>
 
-          {mode === 'invite' ? (
-            <p className="text-xs text-gray-400">
-              An invitation email will be sent with a magic link. The user can set their password after clicking the link.
+          <div>
+            <label className="block text-sm font-semibold text-dark mb-1">Temporary Password *</label>
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Minimum 6 characters"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              The user can reset their password from the login page.
             </p>
-          ) : (
-            <div>
-              <label className="block text-sm font-semibold text-dark mb-1">Password *</label>
-              <input
-                type="password"
-                required
-                minLength={6}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Minimum 6 characters"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-              />
-            </div>
-          )}
+          </div>
 
           <div className="flex gap-3 pt-2">
             <button
@@ -267,7 +237,7 @@ function AddUserModal({ onClose, onCreated }) {
               disabled={saving}
               className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-primary to-dark text-white text-sm font-bold hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:hover:scale-100"
             >
-              {saving ? (mode === 'invite' ? 'Sending...' : 'Creating...') : (mode === 'invite' ? 'Send Invite' : 'Create User')}
+              {saving ? 'Creating...' : 'Create User'}
             </button>
           </div>
         </form>
