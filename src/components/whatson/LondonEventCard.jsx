@@ -26,12 +26,12 @@ export default function LondonEventCard({ event, isActive, onClick }) {
       {/* Badges */}
       <div className="flex items-center gap-2 mb-1.5">
         {event.category && (
-          <span className="text-[11px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+          <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
             {event.category}
           </span>
         )}
         {event.is_free && (
-          <span className="text-[11px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+          <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
             Free
           </span>
         )}
@@ -81,7 +81,7 @@ export default function LondonEventCard({ event, isActive, onClick }) {
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          className="flex items-center gap-1 text-primary hover:text-primary/70 transition-colors font-bold"
+          className="flex items-center gap-1 py-2 text-primary hover:text-primary/70 transition-colors font-bold"
           title="Add to Google Calendar"
         >
           <CalendarPlus size={16} />

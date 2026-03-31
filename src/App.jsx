@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
 import Layout from './components/layout/Layout'
 import ScrollToTop from './components/layout/ScrollToTop'
 import ProtectedRoute from './components/admin/ProtectedRoute'
@@ -22,6 +22,7 @@ const NewsletterManager = lazy(() => import('./pages/admin/NewsletterManager'))
 const NewsletterEditor = lazy(() => import('./pages/admin/NewsletterEditor'))
 const NewsletterAdvertisersManager = lazy(() => import('./pages/admin/NewsletterAdvertisersManager'))
 const NewsletterAdvertiserForm = lazy(() => import('./pages/admin/NewsletterAdvertiserForm'))
+const Dashboard = lazy(() => import('./pages/admin/Dashboard'))
 const UsersManager = lazy(() => import('./pages/admin/UsersManager'))
 
 const Spinner = () => (
@@ -56,6 +57,7 @@ function App() {
               </ProtectedRoute>
             }
           >
+            <Route index element={<Dashboard />} />
             <Route path="events" element={<EventsManager />} />
             <Route path="events/new" element={<EventForm />} />
             <Route path="events/:id/edit" element={<EventForm />} />

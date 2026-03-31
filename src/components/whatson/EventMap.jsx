@@ -58,7 +58,7 @@ export default function EventMap({ events, activeEventId, onMarkerClick, flyTo }
       center={[51.48, -0.01]}
       zoom={12}
       className="w-full h-full rounded-2xl"
-      style={{ minHeight: '500px' }}
+      style={{ minHeight: '100%' }}
       scrollWheelZoom={true}
     >
       <TileLayer

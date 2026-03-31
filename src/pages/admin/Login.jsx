@@ -15,7 +15,7 @@ export default function Login() {
   }, [])
 
   useEffect(() => {
-    if (user) navigate('/admin/events', { replace: true })
+    if (user) navigate('/admin', { replace: true })
   }, [user, navigate])
 
   async function handleSubmit(e) {
@@ -25,7 +25,7 @@ export default function Login() {
 
     try {
       await signIn(email, password)
-      navigate('/admin/events', { replace: true })
+      navigate('/admin', { replace: true })
     } catch (err) {
       setError('Invalid email or password.')
     } finally {

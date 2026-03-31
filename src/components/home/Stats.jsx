@@ -10,7 +10,7 @@ const stats = [
 export default function Stats() {
   return (
     <section className="bg-gradient-to-r from-primary to-dark py-16 md:py-20">
-      <div className="max-w-5xl mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-10 text-center text-white">
+      <div className="max-w-5xl mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-10 text-center text-white">
         {stats.map((stat, i) => (
           <motion.div
             key={stat.label}

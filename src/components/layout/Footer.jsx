@@ -17,12 +17,12 @@ export default function Footer() {
           {/* Quick Links */}
           <div>
             <h3 className="text-lg font-heading font-bold mb-4">Quick Links</h3>
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               {quickLinks.map((link) => (
                 <li key={link.to}>
                   <Link
                     to={link.to}
-                    className="text-gray-300 hover:text-white transition-colors focus:ring-2 focus:ring-primary focus:outline-none rounded"
+                    className="inline-block py-1 text-gray-300 hover:text-white transition-colors focus:ring-2 focus:ring-primary focus:outline-none rounded"
                   >
                     {link.label}
                   </Link>

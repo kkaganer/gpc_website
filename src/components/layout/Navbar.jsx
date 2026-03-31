@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { NavLink, Link } from 'react-router'
 import { Menu, X, Instagram } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -38,6 +39,7 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
+    <>
     <nav aria-label="Main navigation" className="sticky top-0 z-50 bg-warm/95 backdrop-blur-sm border-b border-gray-100">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
         {/* Logo */}
@@ -79,76 +81,81 @@ export default function Navbar() {
         </button>
       </div>
 
-      {/* Mobile drawer */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              className="fixed inset-0 z-50 bg-black/40"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setMobileOpen(false)}
-            />
-
-            {/* Drawer */}
-            <motion.div
-              className="fixed top-0 right-0 z-50 h-full w-64 bg-warm shadow-xl"
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'tween', duration: 0.25 }}
-            >
-              <div className="flex items-center justify-between p-4 border-b border-gray-100">
-                <img src="/images/site-logo.png" alt="Greenwich Parents & Carers" className="h-8" />
-                <button
-                  onClick={() => setMobileOpen(false)}
-                  className="p-2.5 text-dark hover:text-primary transition-colors focus:ring-2 focus:ring-primary focus:outline-none rounded"
-                  aria-label="Close menu"
-                >
-                  <X size={24} />
-                </button>
-              </div>
-              <div className="flex flex-col gap-2 p-4">
-                {navLinks.map((link) => (
-                  <NavLink
-                    key={link.to}
-                    to={link.to}
-                    onClick={() => setMobileOpen(false)}
-                    className={({ isActive }) =>
-                      `px-3 py-2 rounded-lg text-base font-semibold transition-colors focus:ring-2 focus:ring-primary focus:outline-none ${
-                        isActive
-                          ? 'text-primary bg-primary/10'
-                          : 'text-dark hover:text-primary hover:bg-primary/5'
-                      }`
-                    }
-                  >
-                    {link.label}
-                  </NavLink>
-                ))}
-                <a
-                  href="https://sh1.sendinblue.com/amn2zqxhtxpfe.html?t=1774565443585"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-2 rounded-lg text-base font-semibold text-dark hover:text-primary hover:bg-primary/5 transition-colors focus:ring-2 focus:ring-primary focus:outline-none"
-                >
-                  Newsletter
-                </a>
-                <a
-                  href={CONTACT.instagramUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 px-3 py-2 rounded-lg text-base font-semibold text-dark hover:text-primary hover:bg-primary/5 transition-colors focus:ring-2 focus:ring-primary focus:outline-none"
-                >
-                  <Instagram size={20} />
-                  Instagram
-                </a>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
     </nav>
+
+      {/* Mobile drawer — portaled to body so backdrop-blur on nav doesn't break fixed positioning */}
+      {createPortal(
+        <AnimatePresence>
+          {mobileOpen && (
+            <>
+              {/* Backdrop */}
+              <motion.div
+                className="fixed inset-0 z-[100] bg-black/40"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setMobileOpen(false)}
+              />
+
+              {/* Drawer */}
+              <motion.div
+                className="fixed top-0 right-0 z-[100] h-full w-64 bg-warm shadow-xl"
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'tween', duration: 0.25 }}
+              >
+                <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                  <img src="/images/site-logo.png" alt="Greenwich Parents & Carers" className="h-8" />
+                  <button
+                    onClick={() => setMobileOpen(false)}
+                    className="p-2.5 text-dark hover:text-primary transition-colors focus:ring-2 focus:ring-primary focus:outline-none rounded"
+                    aria-label="Close menu"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
+                <div className="flex flex-col gap-2 p-4">
+                  {navLinks.map((link) => (
+                    <NavLink
+                      key={link.to}
+                      to={link.to}
+                      onClick={() => setMobileOpen(false)}
+                      className={({ isActive }) =>
+                        `px-3 py-2 rounded-lg text-base font-semibold transition-colors focus:ring-2 focus:ring-primary focus:outline-none ${
+                          isActive
+                            ? 'text-primary bg-primary/10'
+                            : 'text-dark hover:text-primary hover:bg-primary/5'
+                        }`
+                      }
+                    >
+                      {link.label}
+                    </NavLink>
+                  ))}
+                  <a
+                    href="https://sh1.sendinblue.com/amn2zqxhtxpfe.html?t=1774565443585"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-2 rounded-lg text-base font-semibold text-dark hover:text-primary hover:bg-primary/5 transition-colors focus:ring-2 focus:ring-primary focus:outline-none"
+                  >
+                    Newsletter
+                  </a>
+                  <a
+                    href={CONTACT.instagramUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-base font-semibold text-dark hover:text-primary hover:bg-primary/5 transition-colors focus:ring-2 focus:ring-primary focus:outline-none"
+                  >
+                    <Instagram size={20} />
+                    Instagram
+                  </a>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
+    </>
   )
 }

@@ -1,8 +1,9 @@
 import { NavLink, Outlet, useNavigate } from 'react-router'
-import { CalendarDays, MapPin, Newspaper, Megaphone, Users, LogOut } from 'lucide-react'
+import { LayoutDashboard, CalendarDays, MapPin, Newspaper, Megaphone, Users, LogOut } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
 const sidebarLinks = [
+  { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/events', label: 'Events', icon: CalendarDays },
   { to: '/admin/whats-on', label: "What's On", icon: MapPin },
   { to: '/admin/newsletter', label: 'Newsletter', icon: Newspaper },
@@ -29,10 +30,11 @@ export default function AdminLayout() {
         </div>
 
         <nav className="flex-1 py-4">
-          {sidebarLinks.map(({ to, label, icon: Icon }) => (
+          {sidebarLinks.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
+              end={end}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-6 py-3 text-sm font-medium transition-colors ${
                   isActive

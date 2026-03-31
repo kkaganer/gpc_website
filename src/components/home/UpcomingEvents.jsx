@@ -53,7 +53,7 @@ export default function UpcomingEvents() {
             transition={{ duration: 0.5, delay: i * 0.15 }}
           >
             <Card className="flex flex-col w-full">
-              <div className="bg-gray-50 h-80 flex items-center justify-center">
+              <div className="bg-gray-50 h-48 sm:h-64 md:h-80 flex items-center justify-center">
                 <img
                   src={event.image_url}
                   alt={event.title}
