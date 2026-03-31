@@ -33,6 +33,7 @@ const quickLinks = [
     description: 'Generate and edit newsletters with AI assistance, then export HTML for distribution.',
     icon: Newspaper,
     color: 'bg-blue-50 text-blue-600',
+    comingSoon: true,
   },
   {
     to: '/admin/newsletter-advertisers',
@@ -84,28 +85,50 @@ export default function Dashboard() {
       <div className="mb-10">
         <h2 className="font-heading text-lg font-semibold text-dark mb-4">Quick Links</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {quickLinks.map(({ to, label, description, icon: Icon, color }) => (
-            <Link
-              key={to}
-              to={to}
-              className="group bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md hover:border-primary/20 transition-all"
-            >
-              <div className="flex items-start gap-4">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
-                  <Icon size={20} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-heading font-semibold text-dark">{label}</h3>
-                    <ArrowRight
-                      size={16}
-                      className="text-gray-300 group-hover:text-primary group-hover:translate-x-0.5 transition-all"
-                    />
+          {quickLinks.map(({ to, label, description, icon: Icon, color, comingSoon }) => (
+            comingSoon ? (
+              <div
+                key={to}
+                className="bg-white rounded-2xl border border-gray-100 p-5 opacity-50 cursor-not-allowed"
+              >
+                <div className="flex items-start gap-4">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
+                    <Icon size={20} />
                   </div>
-                  <p className="text-sm text-gray-500 mt-1">{description}</p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-heading font-semibold text-dark">{label}</h3>
+                      <span className="text-[10px] uppercase tracking-wider bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full">
+                        Soon
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">{description}</p>
+                  </div>
                 </div>
               </div>
-            </Link>
+            ) : (
+              <Link
+                key={to}
+                to={to}
+                className="group bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md hover:border-primary/20 transition-all"
+              >
+                <div className="flex items-start gap-4">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
+                    <Icon size={20} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-heading font-semibold text-dark">{label}</h3>
+                      <ArrowRight
+                        size={16}
+                        className="text-gray-300 group-hover:text-primary group-hover:translate-x-0.5 transition-all"
+                      />
+                    </div>
+                    <p className="text-sm text-gray-500 mt-1">{description}</p>
+                  </div>
+                </div>
+              </Link>
+            )
           ))}
         </div>
       </div>

@@ -30,11 +30,23 @@ export default async function handler(req, res) {
     return res.status(200).json({ users: data.users })
   }
 
-  // POST — create a new user
+  // POST — create a new user or send invite
   if (req.method === 'POST') {
-    const { email, password } = req.body
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' })
+    const { email, password, invite } = req.body
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' })
+    }
+
+    if (invite) {
+      const { data, error } = await supabase.auth.admin.inviteUserByEmail(email)
+      if (error) {
+        return res.status(400).json({ error: error.message })
+      }
+      return res.status(201).json({ user: data.user })
+    }
+
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' })
     }
     if (password.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters' })
