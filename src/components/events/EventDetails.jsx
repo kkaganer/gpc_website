@@ -1,5 +1,6 @@
-import { Calendar, Clock, MapPin, Ticket } from 'lucide-react'
+import { Calendar, Clock, MapPin, Ticket, CalendarPlus } from 'lucide-react'
 import Card from '../ui/Card'
+import Button from '../ui/Button'
 
 const DetailRow = ({ icon: Icon, label, value }) => (
   <div className="flex items-start gap-3 py-3 border-b border-gray-100 last:border-0">
@@ -11,7 +12,7 @@ const DetailRow = ({ icon: Icon, label, value }) => (
   </div>
 )
 
-export default function EventDetails({ date, time, location, price, description }) {
+export default function EventDetails({ date, time, location, price, description, calendarUrl }) {
   return (
     <Card className="p-6 md:p-8">
       <DetailRow icon={Calendar} label="Date" value={date} />
@@ -20,6 +21,14 @@ export default function EventDetails({ date, time, location, price, description 
       <DetailRow icon={Ticket} label="Admission" value={price} />
       {description && (
         <p className="text-gray-600 mt-6 leading-relaxed">{description}</p>
+      )}
+      {calendarUrl && (
+        <div className="mt-6">
+          <Button variant="secondary" href={calendarUrl}>
+            <CalendarPlus className="w-4 h-4 mr-2" />
+            Add to Google Calendar
+          </Button>
+        </div>
       )}
     </Card>
   )

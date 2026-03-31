@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useParams, Link } from 'react-router'
 import { AlertTriangle } from 'lucide-react'
 import { useEvent } from '../hooks/useEvents'
+import { generateGoogleCalendarUrl } from '../utils/googleCalendar'
 import EventHero from '../components/events/EventHero'
 import EventDetails from '../components/events/EventDetails'
 import SponsorsBar from '../components/events/SponsorsBar'
@@ -74,6 +75,13 @@ export default function EventPage() {
             location={event.location}
             price={event.price}
             description={event.description}
+            calendarUrl={event.status === 'upcoming' ? generateGoogleCalendarUrl({
+              title: event.title,
+              date: event.date,
+              time: event.time,
+              location: event.location,
+              description: event.description,
+            }) : undefined}
           />
 
           {event.notes && (

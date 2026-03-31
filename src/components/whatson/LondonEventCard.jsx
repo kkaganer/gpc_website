@@ -1,10 +1,19 @@
-import { Calendar, MapPin, Clock, Users, Ticket } from 'lucide-react'
+import { Calendar, MapPin, Clock, Users, Ticket, CalendarPlus } from 'lucide-react'
+import { generateGoogleCalendarUrl } from '../../utils/googleCalendar'
 
 export default function LondonEventCard({ event, isActive, onClick }) {
   const formattedDate = new Date(event.date + 'T00:00:00').toLocaleDateString('en-GB', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
+  })
+
+  const calendarUrl = generateGoogleCalendarUrl({
+    title: event.title,
+    date: event.date,
+    time: event.time,
+    location: [event.venue, event.location].filter(Boolean).join(', '),
+    description: event.description,
   })
 
   return (
@@ -67,6 +76,17 @@ export default function LondonEventCard({ event, isActive, onClick }) {
             Age {event.age_range}
           </span>
         )}
+        <a
+          href={calendarUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="flex items-center gap-1 text-primary hover:text-primary/70 transition-colors font-bold"
+          title="Add to Google Calendar"
+        >
+          <CalendarPlus size={16} />
+          <span>Add to Calendar</span>
+        </a>
       </div>
 
       {/* Location */}
