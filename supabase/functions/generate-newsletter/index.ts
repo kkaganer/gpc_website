@@ -43,12 +43,31 @@ Deno.serve(async (req) => {
       .lte('date', toDate)
       .order('date', { ascending: true })
 
+    // Get confirmed newsletter advertisers for this week
+    // Find the nearest Friday (newsletter send date) within the date range
+    const today = new Date()
+    const dayOfWeek = today.getDay()
+    const daysUntilFriday = (5 - dayOfWeek + 7) % 7
+    const nearestFriday = new Date(today)
+    nearestFriday.setDate(today.getDate() + (daysUntilFriday === 0 && today.getHours() < 12 ? 0 : daysUntilFriday))
+    const fridayDate = nearestFriday.toISOString().split('T')[0]
+
+    const { data: advertisers } = await supabase
+      .from('newsletter_advertisers')
+      .select('*')
+      .eq('newsletter_date', fridayDate)
+      .eq('status', 'confirmed')
+
     const gpcSection = (gpcEvents || []).map(e =>
       `- ${e.title} on ${e.date} at ${e.location}${e.price ? ` (${e.price})` : ''}: ${e.description}`
     ).join('\n')
 
     const londonSection = (londonEvents || []).map(e =>
       `- ${e.title} on ${e.date} at ${e.location} (${e.area || 'London'})${e.is_free ? ' [FREE]' : e.price ? ` (${e.price})` : ''}: ${e.description || ''}`
+    ).join('\n')
+
+    const advertiserSection = (advertisers || []).map(a =>
+      `- ${a.event_title} by ${a.advertiser_name}${a.event_url ? ` (${a.event_url})` : ''}${a.ad_type === 'featured-ad' ? ' [FEATURED]' : a.ad_type === 'logo-sponsor' ? ' [SPONSOR]' : ''}: ${a.event_description || ''}`
     ).join('\n')
 
     const weekOfDate = fromDate
@@ -62,13 +81,17 @@ NEWSLETTER STRUCTURE:
 2. A warm 2-3 sentence intro greeting for the week
 3. "GPC Events" section (if any upcoming GPC events exist)
 4. "What's On This Week" section - London family events grouped by area
-5. Brief closing with a warm sign-off
+5. "From Our Partners" section - advertiser/sponsor content (if any). Featured ads and sponsors should be more prominent than free listings
+6. Brief closing with a warm sign-off
 
 GPC EVENTS:
 ${gpcSection || 'No upcoming GPC events this week.'}
 
 LONDON EVENTS THIS WEEK:
 ${londonSection || 'No curated London events this week.'}
+
+ADVERTISER/PARTNER CONTENT:
+${advertiserSection || 'No advertiser content this week.'}
 
 DESIGN REQUIREMENTS:
 - Use table-based layout (email-compatible)
@@ -133,18 +156,29 @@ Return ONLY the complete HTML document, starting with <!DOCTYPE html>. No markdo
         content_json: {
           gpc_events: gpcEvents || [],
           london_events: londonEvents || [],
+          advertisers: advertisers || [],
         },
         status: 'draft',
         week_of: weekOfDate,
         events_included: [
           ...(gpcEvents || []).map(e => ({ type: 'gpc', id: e.id, title: e.title })),
           ...(londonEvents || []).map(e => ({ type: 'london', id: e.id, title: e.title })),
+          ...(advertisers || []).map(a => ({ type: 'advertiser', id: a.id, title: a.event_title })),
         ],
       })
       .select()
       .single()
 
     if (insertError) throw insertError
+
+    // Mark included advertisers as 'included'
+    if (advertisers && advertisers.length > 0) {
+      const advertiserIds = advertisers.map(a => a.id)
+      await supabase
+        .from('newsletter_advertisers')
+        .update({ status: 'included' })
+        .in('id', advertiserIds)
+    }
 
     return new Response(
       JSON.stringify({ success: true, draft_id: draft.id }),
