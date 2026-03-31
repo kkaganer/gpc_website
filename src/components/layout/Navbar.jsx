@@ -71,7 +71,7 @@ export default function Navbar() {
 
         {/* Mobile hamburger */}
         <button
-          className="md:hidden p-2 text-dark hover:text-primary transition-colors focus:ring-2 focus:ring-primary focus:outline-none rounded"
+          className="md:hidden p-2.5 text-dark hover:text-primary transition-colors focus:ring-2 focus:ring-primary focus:outline-none rounded"
           onClick={() => setMobileOpen(true)}
           aria-label="Open menu"
         >
@@ -104,7 +104,7 @@ export default function Navbar() {
                 <img src="/images/site-logo.png" alt="Greenwich Parents & Carers" className="h-8" />
                 <button
                   onClick={() => setMobileOpen(false)}
-                  className="p-2 text-dark hover:text-primary transition-colors focus:ring-2 focus:ring-primary focus:outline-none rounded"
+                  className="p-2.5 text-dark hover:text-primary transition-colors focus:ring-2 focus:ring-primary focus:outline-none rounded"
                   aria-label="Close menu"
                 >
                   <X size={24} />

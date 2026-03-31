@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router'
-import { CalendarDays, MapPin, Newspaper, Megaphone, LogOut } from 'lucide-react'
+import { CalendarDays, MapPin, Newspaper, Megaphone, Users, LogOut } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
 const sidebarLinks = [
@@ -7,6 +7,7 @@ const sidebarLinks = [
   { to: '/admin/whats-on', label: "What's On", icon: MapPin },
   { to: '/admin/newsletter', label: 'Newsletter', icon: Newspaper },
   { to: '/admin/newsletter-advertisers', label: 'Advertisers', icon: Megaphone },
+  { to: '/admin/users', label: 'Users', icon: Users },
 ]
 
 export default function AdminLayout() {

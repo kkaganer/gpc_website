@@ -22,6 +22,7 @@ const NewsletterManager = lazy(() => import('./pages/admin/NewsletterManager'))
 const NewsletterEditor = lazy(() => import('./pages/admin/NewsletterEditor'))
 const NewsletterAdvertisersManager = lazy(() => import('./pages/admin/NewsletterAdvertisersManager'))
 const NewsletterAdvertiserForm = lazy(() => import('./pages/admin/NewsletterAdvertiserForm'))
+const UsersManager = lazy(() => import('./pages/admin/UsersManager'))
 
 const Spinner = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -66,6 +67,7 @@ function App() {
             <Route path="newsletter-advertisers" element={<NewsletterAdvertisersManager />} />
             <Route path="newsletter-advertisers/new" element={<NewsletterAdvertiserForm />} />
             <Route path="newsletter-advertisers/:id/edit" element={<NewsletterAdvertiserForm />} />
+            <Route path="users" element={<UsersManager />} />
           </Route>
         </Routes>
       </Suspense>

@@ -96,25 +96,25 @@ export default function WhatsOn() {
       {/* Top bar */}
       <div className="bg-white border-b border-gray-100 px-4 py-3">
         <div className="max-w-[1400px] mx-auto">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
             <div>
               <h1 className="font-heading text-xl font-bold text-dark">
                 Greenwich Parents & Carers
               </h1>
               <p className="text-gray-500 text-xs">What's On Guide · Local events for families</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 self-end sm:self-auto">
               {/* Mobile view toggle */}
               <div className="flex md:hidden gap-1 bg-gray-100 rounded-lg p-0.5">
                 <button
                   onClick={() => setMobileView('list')}
-                  className={`p-1.5 rounded-md transition-colors ${mobileView === 'list' ? 'bg-white shadow-sm' : ''}`}
+                  className={`p-2.5 rounded-md transition-colors ${mobileView === 'list' ? 'bg-white shadow-sm' : ''}`}
                 >
                   <List size={18} />
                 </button>
                 <button
                   onClick={() => setMobileView('map')}
-                  className={`p-1.5 rounded-md transition-colors ${mobileView === 'map' ? 'bg-white shadow-sm' : ''}`}
+                  className={`p-2.5 rounded-md transition-colors ${mobileView === 'map' ? 'bg-white shadow-sm' : ''}`}
                 >
                   <MapIcon size={18} />
                 </button>

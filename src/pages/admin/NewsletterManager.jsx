@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router'
-import { Sparkles, Eye, Copy, CheckCircle2 } from 'lucide-react'
+import { Sparkles, Eye, Copy, CheckCircle2, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import ConfirmModal from '../../components/admin/ConfirmModal'
 
 export default function NewsletterManager() {
   const [drafts, setDrafts] = useState([])
@@ -9,6 +10,7 @@ export default function NewsletterManager() {
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState('')
   const [copied, setCopied] = useState(null)
+  const [deleting, setDeleting] = useState(null)
 
   useEffect(() => {
     document.title = 'Newsletter | GPC Admin'
@@ -47,6 +49,13 @@ export default function NewsletterManager() {
     } catch {
       alert('Failed to copy. Please try again.')
     }
+  }
+
+  async function handleDelete() {
+    if (!deleting) return
+    await supabase.from('newsletter_drafts').delete().eq('id', deleting)
+    setDeleting(null)
+    fetchDrafts()
   }
 
   async function handleMarkSent(id) {
@@ -144,10 +153,25 @@ export default function NewsletterManager() {
                     Mark as Sent
                   </button>
                 )}
+                <button
+                  onClick={() => setDeleting(draft.id)}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-500 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors"
+                >
+                  <Trash2 size={16} />
+                  Delete
+                </button>
               </div>
             </div>
           ))}
         </div>
+      )}
+      {deleting && (
+        <ConfirmModal
+          title="Delete Newsletter"
+          message="Are you sure you want to delete this newsletter draft?"
+          onConfirm={handleDelete}
+          onCancel={() => setDeleting(null)}
+        />
       )}
     </div>
   )

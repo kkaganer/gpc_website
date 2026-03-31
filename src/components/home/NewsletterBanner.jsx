@@ -45,14 +45,14 @@ export default function NewsletterBanner() {
             You're subscribed!
           </span>
         ) : (
-          <form onSubmit={handleSubmit} className="flex gap-2">
+          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Your email"
               required
-              className="rounded-full py-2 px-4 text-sm bg-white/10 text-white placeholder-white/50 border border-white/20 focus:border-primary focus:outline-none w-48"
+              className="rounded-full py-2 px-4 text-sm bg-white/10 text-white placeholder-white/50 border border-white/20 focus:border-primary focus:outline-none w-full sm:w-48"
             />
             <button
               type="submit"

@@ -44,7 +44,7 @@ function getDateRange(preset) {
   return { from: null, to: null }
 }
 
-const selectClass = 'px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white text-dark font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer'
+const selectClass = 'w-full md:w-auto px-3 py-2 rounded-xl border border-gray-200 text-sm bg-white text-dark font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer'
 
 export default function EventFilters({ filters, onChange }) {
   const [postcodeInput, setPostcodeInput] = useState(filters.postcode || '')
@@ -119,7 +119,7 @@ export default function EventFilters({ filters, onChange }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="grid grid-cols-2 md:flex md:flex-wrap md:items-center gap-2 md:gap-3">
       {/* Category */}
       <select
         value={filters.category}
@@ -175,7 +175,7 @@ export default function EventFilters({ filters, onChange }) {
             value={postcodeInput}
             onChange={handlePostcodeChange}
             placeholder="Postcode"
-            className={`pl-8 pr-7 py-2 rounded-xl border text-sm bg-white text-dark font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 w-28 placeholder-gray-400 ${
+            className={`pl-8 pr-7 py-2 rounded-xl border text-sm bg-white text-dark font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 w-full md:w-28 placeholder-gray-400 ${
               postcodeError ? 'border-red-300' : filters.postcodeLat ? 'border-green-300' : 'border-gray-200'
             }`}
           />

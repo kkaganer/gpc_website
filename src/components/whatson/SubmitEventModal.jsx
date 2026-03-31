@@ -51,7 +51,7 @@ export default function SubmitEventModal({ onClose }) {
     <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-4 sm:px-6 py-4 flex items-center justify-between rounded-t-2xl">
           <h2 className="font-heading font-bold text-lg text-dark">Submit an Event</h2>
           <button onClick={onClose} className="p-1 text-gray-400 hover:text-dark rounded-lg transition-colors">
             <X size={20} />
@@ -75,7 +75,7 @@ export default function SubmitEventModal({ onClose }) {
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
                 {error}
@@ -94,7 +94,7 @@ export default function SubmitEventModal({ onClose }) {
               />
             </label>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="block">
                 <span className="text-sm font-semibold text-dark">Date *</span>
                 <input
@@ -151,7 +151,7 @@ export default function SubmitEventModal({ onClose }) {
               />
             </label>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="block">
                 <span className="text-sm font-semibold text-dark">Category</span>
                 <select
@@ -177,7 +177,7 @@ export default function SubmitEventModal({ onClose }) {
               </label>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="block">
                 <span className="text-sm font-semibold text-dark">Price</span>
                 <input
