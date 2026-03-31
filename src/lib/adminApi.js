@@ -11,7 +11,7 @@ async function parseResponse(res) {
   try {
     return JSON.parse(text)
   } catch {
-    throw new Error('API not available — make sure you are running "vercel dev" instead of "vite dev"')
+    throw new Error('API not available — run "npx wrangler pages dev dist" instead of "vite dev" for local development')
   }
 }
 
@@ -30,6 +30,17 @@ export async function createAdminUser(email, password) {
   })
   const data = await parseResponse(res)
   if (!res.ok) throw new Error(data.error || 'Failed to create user')
+  return data.user
+}
+
+export async function inviteAdminUser(email) {
+  const res = await fetch('/api/admin/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    body: JSON.stringify({ email, invite: true }),
+  })
+  const data = await parseResponse(res)
+  if (!res.ok) throw new Error(data.error || 'Failed to invite user')
   return data.user
 }
 
