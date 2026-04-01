@@ -21,8 +21,8 @@ export default function EventCard({ event }) {
 
   return (
     <Card>
-      <div className="bg-gray-50">
-        <img src={image_url || image} alt={title} className="w-full h-auto" loading="lazy" />
+      <div className="bg-gray-50 h-48 sm:h-64 md:h-80">
+        <img src={image_url || image} alt={title} className="w-full h-full object-cover" loading="lazy" />
       </div>
       <div className="p-6">
         <Badge variant={status}>{statusLabels[status] || status}</Badge>
