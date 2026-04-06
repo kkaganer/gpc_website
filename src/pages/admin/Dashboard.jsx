@@ -55,7 +55,7 @@ const tips = [
   'Use the sidebar on the left to navigate between sections at any time.',
   'When creating events, you can upload images or paste an image URL.',
   "The What's On section has a Discover feature to find London events automatically.",
-  'Newsletters can be generated with AI — just pick the events and click Generate.',
+  'Newsletters can be generated with AI. Just pick the events and click Generate.',
   'Advertiser statuses track the full pipeline: Pending, Confirmed, Included, Completed.',
 ]
 
@@ -77,7 +77,7 @@ export default function Dashboard() {
           Welcome back, {firstName}!
         </h1>
         <p className="text-gray-500 mt-2">
-          This is the GPC Admin Portal — your central hub for managing all Greenwich Parents &amp; Carers content.
+          This is the GPC Admin Portal, your central hub for managing all Greenwich Parents &amp; Carers content.
         </p>
       </div>
 

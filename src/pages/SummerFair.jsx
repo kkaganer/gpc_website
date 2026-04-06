@@ -32,7 +32,7 @@ export default function SummerFair() {
             </p>
             <p className="text-gray-600 mt-4 leading-relaxed">
               None of this would have been possible without our amazing volunteers,
-              stallholders, and of course — our wonderful sponsors.
+              stallholders, and of course, our wonderful sponsors.
             </p>
           </div>
 

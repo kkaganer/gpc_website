@@ -9,7 +9,7 @@ export default function Activities() {
     <section className="py-16 md:py-24 px-4 max-w-6xl mx-auto">
       <SectionHeading
         title="What We Do"
-        subtitle="Free activities and resources for local families"
+        subtitle="Local parents and carers running events and activities for local families"
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-12">

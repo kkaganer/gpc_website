@@ -5,7 +5,7 @@ import { useEvent } from '../hooks/useEvents'
 import { generateGoogleCalendarUrl } from '../utils/googleCalendar'
 import EventHero from '../components/events/EventHero'
 import EventDetails from '../components/events/EventDetails'
-import SponsorsBar from '../components/events/SponsorsBar'
+
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
@@ -100,43 +100,47 @@ export default function EventPage() {
           )}
 
           {sponsors.length > 0 && (
-            <>
-              <SponsorsBar sponsors={sponsors} showDescriptions title="Our Sponsors" />
-
-              {sponsors.length > 1 && (
-                <div className="mt-8">
-                  <h3 className="font-heading font-bold text-xl text-dark text-center mb-6">
-                    Meet Our Sponsors
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    {sponsors.map((sponsor, index) => (
-                      <Card key={`${sponsor.name}-${index}`} className="p-6 text-center">
-                        <img
-                          src={sponsor.logo}
-                          alt={`${sponsor.name} logo`}
-                          className="h-16 object-contain mx-auto"
-                          loading="lazy"
-                        />
-                        <h4 className="font-heading font-bold text-dark mt-3">
-                          {sponsor.name}
-                        </h4>
-                        <p className="text-gray-500 text-sm mt-2 leading-relaxed">
-                          {sponsor.description}
-                        </p>
-                        <a
-                          href={sponsor.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-block mt-4 text-primary font-bold text-sm hover:underline focus:ring-2 focus:ring-primary focus:outline-none rounded"
-                        >
-                          Visit Website
-                        </a>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
+            <div className="mt-8">
+              <h3 className="font-heading font-bold text-xl text-dark text-center mb-6">
+                Our Sponsors
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {sponsors.map((sponsor, index) => (
+                  <Card key={`${sponsor.name}-${index}`} className="p-6 text-center">
+                    {sponsor.logo ? (
+                      <img
+                        src={sponsor.logo}
+                        alt={`${sponsor.name} logo`}
+                        className="h-16 object-contain mx-auto"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="h-16 flex items-center justify-center font-heading font-bold text-dark text-lg">
+                        {sponsor.name}
+                      </div>
+                    )}
+                    <h4 className="font-heading font-bold text-dark mt-3">
+                      {sponsor.name}
+                    </h4>
+                    {sponsor.description && (
+                      <p className="text-gray-500 text-sm mt-2 leading-relaxed">
+                        {sponsor.description}
+                      </p>
+                    )}
+                    {sponsor.url && (
+                      <a
+                        href={sponsor.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-block mt-4 text-primary font-bold text-sm hover:underline focus:ring-2 focus:ring-primary focus:outline-none rounded"
+                      >
+                        Visit Website
+                      </a>
+                    )}
+                  </Card>
+                ))}
+              </div>
+            </div>
           )}
 
           <div className="text-center mt-8 py-8 border-t border-gray-100">

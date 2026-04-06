@@ -11,7 +11,7 @@ async function parseResponse(res) {
   try {
     return JSON.parse(text)
   } catch {
-    throw new Error('API not available — run "npx wrangler pages dev dist" instead of "vite dev" for local development')
+    throw new Error('API not available - run "npx wrangler pages dev dist" instead of "vite dev" for local development')
   }
 }
 

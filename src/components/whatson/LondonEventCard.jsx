@@ -1,4 +1,4 @@
-import { Calendar, MapPin, Clock, Users, Ticket, CalendarPlus } from 'lucide-react'
+import { Calendar, MapPin, Clock, Users, Ticket, CalendarPlus, ExternalLink } from 'lucide-react'
 import { generateGoogleCalendarUrl } from '../../utils/googleCalendar'
 
 export default function LondonEventCard({ event, isActive, onClick }) {
@@ -87,6 +87,19 @@ export default function LondonEventCard({ event, isActive, onClick }) {
           <CalendarPlus size={16} />
           <span>Add to Calendar</span>
         </a>
+        {event.url && event.url.startsWith('http') && (
+          <a
+            href={event.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1 py-2 text-primary hover:text-primary/70 transition-colors font-bold"
+            title="View event page"
+          >
+            <ExternalLink size={14} />
+            <span>View event</span>
+          </a>
+        )}
       </div>
 
       {/* Location */}

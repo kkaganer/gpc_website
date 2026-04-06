@@ -136,7 +136,7 @@ export default function WhatsOn() {
 
       {/* Split layout */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Event list — left panel */}
+        {/* Event list - left panel */}
         <div
           ref={listRef}
           className={`w-full md:w-[45%] lg:w-[40%] overflow-y-auto border-r border-gray-100 bg-white ${
@@ -182,7 +182,7 @@ export default function WhatsOn() {
           )}
         </div>
 
-        {/* Map — right panel */}
+        {/* Map - right panel */}
         <div
           className={`flex-1 ${
             mobileView === 'list' ? 'hidden md:block' : ''

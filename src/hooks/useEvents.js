@@ -11,7 +11,7 @@ function computeStatus(event) {
   return eventDate >= today ? 'upcoming' : 'past'
 }
 
-export function useEvents({ featured, status, limit } = {}) {
+export function useEvents({ featured, status, limit, ascending = false } = {}) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -21,11 +21,9 @@ export function useEvents({ featured, status, limit } = {}) {
       let query = supabase
         .from('gpc_events')
         .select('*')
-        .order('date', { ascending: false })
+        .order('date', { ascending })
 
       if (featured) query = query.eq('featured', true)
-      if (status) query = query.eq('status', status)
-      if (limit) query = query.limit(limit)
 
       const { data, error: fetchError } = await query
 
@@ -34,16 +32,17 @@ export function useEvents({ featured, status, limit } = {}) {
         setEvents([])
       } else {
         const withStatus = (data || []).map(e => ({ ...e, status: computeStatus(e) }))
-        const sorted = withStatus.sort(
+        const filtered = status ? withStatus.filter(e => e.status === status) : withStatus
+        const sorted = filtered.sort(
           (a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
         )
-        setEvents(sorted)
+        setEvents(limit ? sorted.slice(0, limit) : sorted)
       }
       setLoading(false)
     }
 
     fetchEvents()
-  }, [featured, status, limit])
+  }, [featured, status, limit, ascending])
 
   return { events, loading, error }
 }

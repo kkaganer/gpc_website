@@ -6,25 +6,43 @@ const milestones = [
     year: '2021',
     title: 'GPC Founded',
     description:
-      'Aster Thackery starts Greenwich Parents & Carers during COVID, bringing isolated parents together through park meetups.',
-  },
-  {
-    year: '2024',
-    title: 'Became a CIC',
-    description:
-      'GPC officially registered as a Community Interest Company (No. 16387545), formalising our commitment to the community.',
+      'Aster starts Greenwich Parents & Carers during COVID, bringing isolated parents together through coffee meetups at Davy\'s in Greenwich.',
   },
   {
     year: '2024',
     title: 'First Summer Fair',
     description:
-      'Our inaugural Summer Fair brought hundreds of families together with stalls, activities, and live entertainment.',
+      'Our inaugural Summer Fair brings hundreds of families together with stalls, activities, and live entertainment.',
   },
   {
-    year: '2025',
+    year: 'Nov 2024',
+    title: 'Weekly What\'s On Guide',
+    description:
+      'Free weekly newsletter launched, now reaching 500+ subscribers with local events and family-friendly recommendations.',
+  },
+  {
+    year: 'Feb 2025',
+    title: 'Mums in Business Launched',
+    description:
+      'Monthly networking meetups for local working mums, led by Andrea. Building connections between parents balancing business and family.',
+  },
+  {
+    year: 'Apr 2025',
+    title: 'Became a CIC',
+    description:
+      'GPC officially registered as a Community Interest Company (No. 16387545), formalising our commitment to the community.',
+  },
+  {
+    year: 'Dec 2025',
+    title: 'First Christmas Fair',
+    description:
+      'Our sold-out Christmas Fair at Borough Hall welcomes 300+ families for a festive celebration.',
+  },
+  {
+    year: '2026',
     title: '1,800+ Members',
     description:
-      'Our community continues to grow, with a sold-out Christmas Fair and plans for even bigger events ahead.',
+      'Our community continues to grow, with 20 volunteer admins and plans for even bigger things ahead.',
   },
 ]
 
@@ -39,7 +57,7 @@ export default function Milestones() {
 
         <div className="relative mt-12">
           {/* Vertical line */}
-          <div className="absolute left-6 md:left-1/2 md:-translate-x-px top-0 bottom-0 w-0.5 bg-pink-200" />
+          <div className="absolute left-6 md:left-1/2 md:-translate-x-px top-0 bottom-0 w-0.5 bg-gradient-to-b from-primary to-dark" />
 
           <div className="space-y-12">
             {milestones.map((milestone, index) => {
@@ -49,8 +67,8 @@ export default function Milestones() {
                 <motion.div
                   key={`${milestone.year}-${milestone.title}`}
                   className="relative"
-                  initial={{ opacity: 0, y: 30 }}
-                  whileInView={{ opacity: 1, y: 0 }}
+                  initial={{ opacity: 0 }}
+                  whileInView={{ opacity: 1 }}
                   viewport={{ once: true }}
                   transition={{ duration: 0.5, delay: index * 0.1 }}
                 >
@@ -65,7 +83,7 @@ export default function Milestones() {
                         : 'md:ml-auto md:pl-8'
                     }`}
                   >
-                    <span className="inline-block rounded-full bg-primary text-white px-4 py-1 font-bold text-sm">
+                    <span className="inline-block rounded-full bg-primary/10 text-primary px-4 py-1 font-bold text-sm">
                       {milestone.year}
                     </span>
                     <h3 className="font-heading font-bold text-lg mt-2">

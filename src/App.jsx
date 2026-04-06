@@ -11,6 +11,9 @@ const Events = lazy(() => import('./pages/Events'))
 const EventPage = lazy(() => import('./pages/EventPage'))
 const Gallery = lazy(() => import('./pages/Gallery'))
 const WhatsOn = lazy(() => import('./pages/WhatsOn'))
+const Volunteers = lazy(() => import('./pages/Volunteers'))
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'))
+const JoinTest = lazy(() => import('./pages/JoinTest'))
 
 // Admin pages
 const AdminLogin = lazy(() => import('./pages/admin/Login'))
@@ -46,6 +49,9 @@ function App() {
             <Route path="/events/:slug" element={<EventPage />} />
             <Route path="/whats-on" element={<WhatsOn />} />
             <Route path="/gallery" element={<Gallery />} />
+            <Route path="/volunteers" element={<Volunteers />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/join-test" element={<JoinTest />} />
           </Route>
 
           {/* Admin routes */}

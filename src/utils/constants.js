@@ -16,6 +16,8 @@ export const CONTACT = {
   instagram: '@gpc.community',
   instagramUrl: 'https://www.instagram.com/gpc.community/',
   location: 'SE10 9JT, London',
+  // TODO: replace with actual WhatsApp Community invite link
+  whatsappCommunityUrl: 'https://chat.whatsapp.com/PLACEHOLDER',
 };
 
 export const ORG = {

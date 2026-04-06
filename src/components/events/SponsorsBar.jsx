@@ -13,12 +13,18 @@ export default function SponsorsBar({ sponsors, showDescriptions = false, title 
               rel="noopener noreferrer"
               className="hover:opacity-80 transition-opacity focus:ring-2 focus:ring-primary focus:outline-none rounded"
             >
-              <img
-                src={sponsor.logo}
-                alt={`${sponsor.name} logo`}
-                className="h-16 object-contain"
-                loading="lazy"
-              />
+              {sponsor.logo ? (
+                <img
+                  src={sponsor.logo}
+                  alt={`${sponsor.name} logo`}
+                  className="h-16 object-contain"
+                  loading="lazy"
+                />
+              ) : (
+                <span className="h-16 flex items-center font-heading font-bold text-dark text-lg">
+                  {sponsor.name}
+                </span>
+              )}
             </a>
             <p className="mt-2 font-heading font-semibold text-dark text-sm">
               {sponsor.name}

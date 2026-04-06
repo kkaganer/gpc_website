@@ -9,8 +9,11 @@ const statusLabels = {
   past: 'Past',
 }
 
+const FALLBACK_IMAGE = '/images/background_banner.png';
+
 export default function EventCard({ event }) {
   const { slug, title, date, location, description, image_url, image, status } = event
+  const imgSrc = image_url || image || FALLBACK_IMAGE;
 
   const formattedDate = new Date(date + 'T00:00:00').toLocaleDateString('en-GB', {
     weekday: 'long',
@@ -20,9 +23,9 @@ export default function EventCard({ event }) {
   })
 
   return (
-    <Card>
-      <div className="bg-gray-50 h-48 sm:h-64 md:h-80">
-        <img src={image_url || image} alt={title} className="w-full h-full object-cover" loading="lazy" />
+    <Card className="h-full flex flex-col">
+      <div className="bg-gray-50 h-56 sm:h-64">
+        <img src={imgSrc} alt={title} className="w-full h-full object-cover" loading="lazy" onError={(e) => { e.target.src = FALLBACK_IMAGE; }} />
       </div>
       <div className="p-6">
         <Badge variant={status}>{statusLabels[status] || status}</Badge>

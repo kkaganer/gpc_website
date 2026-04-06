@@ -1,59 +1,41 @@
-import { motion } from 'framer-motion'
-import SectionHeading from '../ui/SectionHeading'
-import Card from '../ui/Card'
-import { team } from '../../data/team'
-
-const container = {
-  hidden: {},
-  show: {
-    transition: {
-      staggerChildren: 0.12,
-    },
-  },
-}
-
-const item = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5 } },
-}
+import { motion } from 'framer-motion';
+import { team } from '../../data/team';
 
 export default function Team() {
   return (
     <section className="py-16 md:py-24">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <SectionHeading
-          title="Meet the Team"
-          subtitle="The volunteers behind GPC"
-        />
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 className="font-heading text-3xl md:text-4xl font-bold text-dark text-center mb-4">
+          The humans behind GPC
+        </h2>
+        <p className="text-gray-600 text-center mb-12">
+          Meet some of the volunteers who keep things running
+        </p>
 
-        <motion.div
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mt-12"
-          variants={container}
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true }}
-        >
-          {team.map((member) => (
-            <motion.div key={member.name} variants={item}>
-              <Card className="p-6 text-center h-full">
-                <img
-                  src={member.image}
-                  alt={`Photo of ${member.name}, ${member.role}`}
-                  className="w-32 h-32 rounded-full mx-auto object-cover border-4 border-pink-200"
-                  loading="lazy"
-                />
-                <h3 className="font-heading font-bold text-lg mt-4">
-                  {member.name}
-                </h3>
-                <p className="text-primary text-sm font-semibold">
-                  {member.role}
-                </p>
-                <p className="text-gray-600 text-sm mt-2">{member.bio}</p>
-              </Card>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+          {team.map((member, i) => (
+            <motion.div
+              key={member.name}
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.4, delay: i * 0.1 }}
+              className="text-center"
+            >
+              <img
+                src={member.photo}
+                alt={member.name}
+                className="w-28 h-28 md:w-32 md:h-32 rounded-full mx-auto object-cover shadow-md"
+                loading="lazy"
+              />
+              <h3 className="font-heading font-semibold text-dark mt-4">
+                {member.name}
+              </h3>
+              <p className="text-gray-500 text-sm">{member.role}</p>
             </motion.div>
           ))}
-        </motion.div>
+        </div>
       </div>
     </section>
-  )
+  );
 }

@@ -36,7 +36,7 @@ export default function NewsletterBanner() {
       <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
         <p className="text-white text-sm flex items-center gap-2">
           <Mail size={16} className="text-primary shrink-0" />
-          Stay in the loop — join {ORG.memberCount} Greenwich parents
+          Stay in the loop. Join {ORG.memberCount} Greenwich parents
         </p>
 
         {status === 'success' ? (

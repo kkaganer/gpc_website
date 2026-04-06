@@ -139,7 +139,7 @@ export default function LondonEventsManager() {
                     <p className="text-gray-400 text-xs">{event.location}</p>
                   </td>
                   <td className="px-6 py-4 text-gray-600">{formatDate(event.date)}</td>
-                  <td className="px-6 py-4 text-gray-600">{event.area || '—'}</td>
+                  <td className="px-6 py-4 text-gray-600">{event.area || '-'}</td>
                   <td className="px-6 py-4">
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                       event.source === 'perplexity' ? 'bg-purple-50 text-purple-600' : 'bg-gray-100 text-gray-500'

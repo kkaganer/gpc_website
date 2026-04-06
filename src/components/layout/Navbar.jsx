@@ -8,8 +8,9 @@ import { CONTACT } from '../../utils/constants'
 const navLinks = [
   { to: '/', label: 'Home' },
   { to: '/about', label: 'About' },
-  { to: '/events', label: 'Events' },
+  { to: '/events', label: 'Our Events' },
   { to: '/whats-on', label: "What's On" },
+  { to: '/volunteers', label: 'Volunteers' },
 ]
 
 function NavItem({ to, label, onClick }) {
@@ -83,7 +84,7 @@ export default function Navbar() {
 
     </nav>
 
-      {/* Mobile drawer — portaled to body so backdrop-blur on nav doesn't break fixed positioning */}
+      {/* Mobile drawer - portaled to body so backdrop-blur on nav doesn't break fixed positioning */}
       {createPortal(
         <AnimatePresence>
           {mobileOpen && (

@@ -17,14 +17,14 @@ function formatDate(dateStr) {
 }
 
 export default function UpcomingEvents() {
-  const { events, loading } = useEvents()
+  const { events, loading } = useEvents({ status: 'upcoming', limit: 2, ascending: true })
 
   if (loading) {
     return (
       <section id="events" className="py-16 md:py-24 px-4 max-w-6xl mx-auto">
         <SectionHeading
           title="Upcoming Events"
-          subtitle="Don't miss out on our latest community events"
+          subtitle="Events organised by our community, for our community"
         />
         <div className="flex justify-center mt-12">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent" />
@@ -39,7 +39,7 @@ export default function UpcomingEvents() {
     <section id="events" className="py-16 md:py-24 px-4 max-w-6xl mx-auto">
       <SectionHeading
         title="Upcoming Events"
-        subtitle="Don't miss out on our latest community events"
+        subtitle="Events organised by our community, for our community"
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-12">
