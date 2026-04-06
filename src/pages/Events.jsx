@@ -117,15 +117,21 @@ export default function Events() {
                       </div>
                       <p className="text-gray-600 text-sm mt-3">{event.description}</p>
                       <div className="mt-4">
-                        <a
-                          href={event.link}
-                          target={event.link.startsWith('http') ? '_blank' : undefined}
-                          rel={event.link.startsWith('http') ? 'noopener noreferrer' : undefined}
-                          className="inline-flex items-center gap-1 text-sm font-bold text-primary hover:underline"
-                        >
-                          {event.linkLabel}
-                          <ExternalLink size={14} />
-                        </a>
+                        {event.contact ? (
+                          <span className="text-sm font-bold text-primary">
+                            {event.contact}
+                          </span>
+                        ) : event.link && (
+                          <a
+                            href={event.link}
+                            target={event.link.startsWith('http') ? '_blank' : undefined}
+                            rel={event.link.startsWith('http') ? 'noopener noreferrer' : undefined}
+                            className="inline-flex items-center gap-1 text-sm font-bold text-primary hover:underline"
+                          >
+                            {event.linkLabel}
+                            <ExternalLink size={14} />
+                          </a>
+                        )}
                       </div>
                     </div>
                   </Card>

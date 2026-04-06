@@ -20,6 +20,10 @@ export default function Footer() {
             {CONTACT.location}
           </span>
           <Link to="/privacy" className="hover:text-white transition-colors text-xs">Privacy</Link>
+          <span className="text-white/30">|</span>
+          <Link to="/gdpr-policy" className="hover:text-white transition-colors text-xs">GDPR</Link>
+          <span className="text-white/30">|</span>
+          <Link to="/safeguarding-policy" className="hover:text-white transition-colors text-xs">Safeguarding</Link>
         </div>
       </div>
     </footer>

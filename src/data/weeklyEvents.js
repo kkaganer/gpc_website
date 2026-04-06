@@ -14,7 +14,6 @@ export const weeklyEvents = [
     time: 'Fridays, 1.45pm',
     location: 'Prince of Wales Pub, Blackheath',
     free: true,
-    link: 'tel:07930524747',
-    linkLabel: 'Contact Sharon',
+    contact: 'Sharon — 07930 524747',
   },
 ];

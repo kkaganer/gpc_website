@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Link } from 'react-router';
 import { CONTACT, ORG } from '../utils/constants';
 
 export default function PrivacyPolicy() {
@@ -80,6 +81,17 @@ export default function PrivacyPolicy() {
               {CONTACT.email}
             </a>
             .
+          </p>
+        </section>
+
+        <section className="border-t border-gray-200 pt-6">
+          <h2 className="font-heading font-bold text-dark text-xl mb-2">Organisation Policies</h2>
+          <p>
+            This privacy policy covers your use of the {ORG.shortName} website. For
+            our full organisational data protection policy, see our{' '}
+            <Link to="/gdpr-policy" className="text-primary hover:underline">GDPR Policy</Link>.
+            For our child protection and safeguarding procedures, see our{' '}
+            <Link to="/safeguarding-policy" className="text-primary hover:underline">Safeguarding Policy</Link>.
           </p>
         </section>
       </div>

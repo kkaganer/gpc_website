@@ -20,6 +20,15 @@ export const CONTACT = {
   whatsappCommunityUrl: 'https://chat.whatsapp.com/PLACEHOLDER',
 };
 
+export const SAFEGUARDING = {
+  seniorLead: { name: 'Aster Thackery', email: 'aster.thackery@gmail.com', phone: '0044 7784424572' },
+  deputyLead: { name: 'Clare Macgregor', email: 'Cmacg@futurealternative.co.uk' },
+};
+
+export const GDPR = {
+  dataController: 'Aster Thackery',
+};
+
 export const ORG = {
   name: 'Greenwich Parents & Carers',
   shortName: 'GPC',

@@ -13,6 +13,8 @@ const Gallery = lazy(() => import('./pages/Gallery'))
 const WhatsOn = lazy(() => import('./pages/WhatsOn'))
 const Volunteers = lazy(() => import('./pages/Volunteers'))
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'))
+const GdprPolicy = lazy(() => import('./pages/GdprPolicy'))
+const SafeguardingPolicy = lazy(() => import('./pages/SafeguardingPolicy'))
 const JoinTest = lazy(() => import('./pages/JoinTest'))
 
 // Admin pages
@@ -51,6 +53,8 @@ function App() {
             <Route path="/gallery" element={<Gallery />} />
             <Route path="/volunteers" element={<Volunteers />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/gdpr-policy" element={<GdprPolicy />} />
+            <Route path="/safeguarding-policy" element={<SafeguardingPolicy />} />
             <Route path="/join-test" element={<JoinTest />} />
           </Route>
 

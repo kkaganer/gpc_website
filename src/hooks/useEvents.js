@@ -33,9 +33,14 @@ export function useEvents({ featured, status, limit, ascending = false } = {}) {
       } else {
         const withStatus = (data || []).map(e => ({ ...e, status: computeStatus(e) }))
         const filtered = status ? withStatus.filter(e => e.status === status) : withStatus
-        const sorted = filtered.sort(
-          (a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
-        )
+        const sorted = filtered.sort((a, b) => {
+          const statusDiff = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
+          if (statusDiff !== 0) return statusDiff
+          const dateA = new Date(a.date + 'T00:00:00')
+          const dateB = new Date(b.date + 'T00:00:00')
+          // upcoming/sold-out: earliest first; past: most recent first
+          return a.status === 'past' ? dateB - dateA : dateA - dateB
+        })
         setEvents(limit ? sorted.slice(0, limit) : sorted)
       }
       setLoading(false)
