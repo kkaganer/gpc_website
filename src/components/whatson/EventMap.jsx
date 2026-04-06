@@ -96,9 +96,9 @@ export default function EventMap({ events, activeEventId, onMarkerClick, flyTo }
                   Free
                 </span>
               )}
-              {event.url && event.url.startsWith('http') && (
+              {event.url && (
                 <a
-                  href={event.url}
+                  href={event.url.startsWith('http') ? event.url : `https://${event.url}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ display: 'inline-block', marginTop: 8, fontSize: 12, fontWeight: 700, color: '#fc16a0', textDecoration: 'none' }}

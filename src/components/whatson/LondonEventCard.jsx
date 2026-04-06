@@ -8,6 +8,10 @@ export default function LondonEventCard({ event, isActive, onClick }) {
     month: 'short',
   })
 
+  const eventUrl = event.url
+    ? event.url.startsWith('http') ? event.url : `https://${event.url}`
+    : null
+
   const calendarUrl = generateGoogleCalendarUrl({
     title: event.title,
     date: event.date,
@@ -23,6 +27,15 @@ export default function LondonEventCard({ event, isActive, onClick }) {
         isActive ? 'bg-primary/5 border-l-2 border-l-primary' : ''
       }`}
     >
+      {/* Image */}
+      {event.image_url && (
+        <img
+          src={event.image_url}
+          alt={event.title}
+          className="w-full h-40 object-cover rounded-lg mb-2"
+        />
+      )}
+
       {/* Badges */}
       <div className="flex items-center gap-2 mb-1.5">
         {event.category && (
@@ -87,9 +100,9 @@ export default function LondonEventCard({ event, isActive, onClick }) {
           <CalendarPlus size={16} />
           <span>Add to Calendar</span>
         </a>
-        {event.url && event.url.startsWith('http') && (
+        {eventUrl && (
           <a
-            href={event.url}
+            href={eventUrl}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}

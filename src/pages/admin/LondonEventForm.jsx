@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { ArrowLeft } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import ImageUpload from '../../components/admin/ImageUpload'
 
 const emptyForm = {
   title: '',
@@ -279,16 +280,12 @@ export default function LondonEventForm() {
           />
         </label>
 
-        <label className="block">
-          <span className="text-sm font-semibold text-dark">Image URL</span>
-          <input
-            type="text"
-            value={form.image_url}
-            onChange={(e) => set('image_url', e.target.value)}
-            className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-            placeholder="Image URL (optional)"
-          />
-        </label>
+        <div>
+          <span className="text-sm font-semibold text-dark">Event Image</span>
+          <div className="mt-1">
+            <ImageUpload value={form.image_url} onChange={(url) => set('image_url', url)} />
+          </div>
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <label className="block">
