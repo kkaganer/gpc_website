@@ -8,7 +8,7 @@ const initiatives = [
     icon: Heart,
     title: 'MammaKind',
     description:
-      'Our partner charity supporting maternal mental health. We work closely with MammaKind to raise awareness and connect parents with the support they need.',
+      'Our partner baby bank supporting families with essential items for babies and young children. We work closely with MammaKind to collect and distribute donations to families who need them.',
     url: 'https://mammakind.org.uk/',
   },
   {

@@ -24,7 +24,7 @@ export const sponsors = {
       name: 'MammaKind',
       logo: '/images/sponsors/mammakind.jpg',
       url: 'https://www.mammakind.com',
-      description: 'Perinatal mental health support and wellbeing services for new and expectant parents.',
+      description: 'A baby bank providing essential items for babies and young children to families who need them.',
     },
     {
       name: 'Working Mums Club',

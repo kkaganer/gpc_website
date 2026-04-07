@@ -1,21 +1,12 @@
-// TODO: Replace with real member quotes before launch
 export const testimonials = [
   {
     quote:
-      'Joining GPC was the best thing I did after moving to the area. The meetups helped me find my village when I needed it most.',
-    name: 'Placeholder Member',
-    role: 'Parent of 2',
+      'GPC was a really vital group for my family when we moved to Greenwich. I was 8 months pregnant when we moved and had a toddler and it was such a welcoming and well run community that eased our move so well — being able to find things to do with our children, items on freecycle, support for my new business — the list goes on. Testament to Aster and the parents that run this group but it is simply fantastic.',
+    name: 'Jennifer',
   },
   {
     quote:
-      'The WhatsApp groups are such a lifeline. From last-minute childcare tips to recommendations, there is always someone happy to help.',
-    name: 'Placeholder Member',
-    role: 'New parent',
-  },
-  {
-    quote:
-      'The community events have given my kids and me so many happy memories. It really feels like GPC is run with heart.',
-    name: 'Placeholder Member',
-    role: 'Local carer',
+      'Although I had been living in Greenwich for a while, I didn\'t know anything baby nor parent related in the area. GPC really helped me to navigate those early years and the new world of becoming a mother and parenting.',
+    name: 'Evi',
   },
 ];

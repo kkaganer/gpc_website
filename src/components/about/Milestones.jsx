@@ -3,13 +3,13 @@ import SectionHeading from '../ui/SectionHeading'
 
 const milestones = [
   {
-    year: '2021',
+    year: 'July 2021',
     title: 'GPC Founded',
     description:
       'Aster starts Greenwich Parents & Carers during COVID, bringing isolated parents together through coffee meetups at Davy\'s in Greenwich.',
   },
   {
-    year: '2024',
+    year: 'July 2024',
     title: 'First Summer Fair',
     description:
       'Our inaugural Summer Fair brings hundreds of families together with stalls, activities, and live entertainment.',
@@ -36,7 +36,7 @@ const milestones = [
     year: 'Dec 2025',
     title: 'First Christmas Fair',
     description:
-      'Our sold-out Christmas Fair at Borough Hall welcomes 300+ families for a festive celebration.',
+      'Our sold-out Christmas Fair at Greenwich West Community & Arts Centre welcomes 300+ families for a festive celebration.',
   },
   {
     year: '2026',

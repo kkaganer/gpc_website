@@ -21,7 +21,7 @@ export default function Story() {
           <div className="w-16 h-1 bg-primary mt-4 rounded-full" />
 
           <p className="text-gray-700 leading-relaxed mt-8 text-lg">
-            Greenwich Parents &amp; Carers was born in 2021, during the COVID-19
+            Greenwich Parents &amp; Carers was born in July 2021, during the COVID-19
             pandemic. Aster, a new parent in Greenwich, saw how isolated local
             families had become and decided to do something about it, starting
             with simple coffee meetups at Davy's in Greenwich.

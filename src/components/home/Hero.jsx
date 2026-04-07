@@ -28,7 +28,7 @@ export default function Hero() {
           transition={{ duration: 0.6 }}
         >
           <h1 className="font-heading font-bold text-dark text-3xl sm:text-4xl md:text-5xl leading-tight">
-            Your village in Greenwich
+            Welcome to your village in Greenwich
           </h1>
           <p className="mt-4 text-gray-700 text-base sm:text-lg leading-relaxed max-w-lg">
             {ORG.memberCount} parents and carers running events and activities for local families. Come as you are.

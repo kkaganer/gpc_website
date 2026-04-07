@@ -18,7 +18,7 @@ export default function Newsletter() {
           Stay in the loop
         </h2>
         <p className="text-gray-600 mt-2">
-          Our free weekly What's On guide lands every Thursday
+          Our free weekly What's On guide lands every Friday
         </p>
 
         <div className="mt-8">
