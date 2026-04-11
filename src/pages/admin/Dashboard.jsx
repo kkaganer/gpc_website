@@ -9,6 +9,10 @@ import {
   ArrowRight,
   BookOpen,
   Sparkles,
+  MousePointerClick,
+  Palette,
+  Copy,
+  Eye,
 } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -30,10 +34,9 @@ const quickLinks = [
   {
     to: '/admin/newsletter',
     label: 'Newsletter',
-    description: 'Generate and edit newsletters with AI assistance, then export HTML for distribution.',
+    description: 'Generate weekly newsletters, edit them visually by clicking any text, then copy the HTML to paste into Brevo.',
     icon: Newspaper,
     color: 'bg-blue-50 text-blue-600',
-    comingSoon: true,
   },
   {
     to: '/admin/newsletter-advertisers',
@@ -55,8 +58,101 @@ const tips = [
   'Use the sidebar on the left to navigate between sections at any time.',
   'When creating events, you can upload images or paste an image URL.',
   "The What's On section has a Discover feature to find London events automatically.",
-  'Newsletters can be generated with AI. Just pick the events and click Generate.',
   'Advertiser statuses track the full pipeline: Pending, Confirmed, Included, Completed.',
+  'GPC-hosted events (titles containing "GPC") get a yellow highlight in the newsletter automatically.',
+]
+
+// Newsletter help — step-by-step walkthrough for the full flow from empty draft to Brevo.
+const newsletterSteps = [
+  {
+    icon: Sparkles,
+    title: 'Open the editor',
+    body: (
+      <>
+        Go to <strong>Newsletter</strong> in the sidebar. Click <strong>Open editor</strong> to
+        start a fresh draft, or click the pink <strong>Edit</strong> button on an existing draft
+        to reopen it exactly how you left it.
+      </>
+    ),
+  },
+  {
+    icon: Palette,
+    title: 'Pick what goes in the newsletter',
+    body: (
+      <>
+        The left sidebar lists every section (Masthead, Featured event, This Week, Coming up,
+        Presenting sponsor, Donation bar, Regular activities, Supporter, Footer). Use the{' '}
+        <strong>ON / OFF</strong> pill next to a section to include or hide it for this
+        newsletter. Click <strong>Colours &amp; branding</strong> at the top to change any theme
+        colour for this week only — your changes don&rsquo;t affect future newsletters.
+      </>
+    ),
+  },
+  {
+    icon: MousePointerClick,
+    title: 'Click any text in the preview to edit it',
+    body: (
+      <>
+        Hover over the preview on the right — every editable piece of text (event titles,
+        descriptions, dates, sponsor names, button labels, the intro message) gets a pink dashed
+        outline. <strong>Click the text you want to change</strong> and the middle panel jumps
+        straight to the right field, ready for you to type. The preview updates as you type.
+        Click the small <strong>↺</strong> icon to reset a field back to the original value, or
+        the eye icon to exclude an event from this newsletter entirely.
+      </>
+    ),
+  },
+  {
+    icon: Eye,
+    title: 'Save your draft',
+    body: (
+      <>
+        Click <strong>Save draft</strong> in the top bar. Your draft is stored with every edit
+        intact — come back any time and click the pink <strong>Edit</strong> button on the
+        drafts list to resume where you left off. Drafts never overwrite source data in Events
+        or What&rsquo;s On; your edits are scoped to this one newsletter.
+      </>
+    ),
+  },
+  {
+    icon: Copy,
+    title: 'Copy HTML and paste into Brevo',
+    body: (
+      <>
+        When you&rsquo;re ready, click <strong>Copy HTML</strong> in the top bar. Open a new
+        campaign in Brevo, pick the <strong>Paste HTML</strong> option, and paste. Send a test
+        email to yourself first to check it looks right, then schedule or send.
+      </>
+    ),
+  },
+]
+
+const newsletterNotes = [
+  <>
+    <strong>Sponsors</strong> don&rsquo;t come from events — they live in{' '}
+    <Link to="/admin/newsletter-advertisers" className="text-primary underline">
+      Advertisers
+    </Link>
+    . For a sponsor to appear in this week&rsquo;s newsletter, their <em>Newsletter Date</em>{' '}
+    must match the nearest Friday and their <em>Status</em> must be <em>Confirmed</em> or{' '}
+    <em>Included</em>.
+  </>,
+  <>
+    The <strong>Presenting</strong> block pulls a sponsor with ad type <em>Featured Ad</em>; the{' '}
+    <strong>Supporter</strong> block pulls one with ad type <em>Logo Sponsor</em>. Only one
+    advertiser per slot per week.
+  </>,
+  <>
+    Events from <Link to="/admin/whats-on" className="text-primary underline">What&rsquo;s On</Link>{' '}
+    are auto-sorted into <strong>This Week</strong> (next 7 days, SE London),{' '}
+    <strong>Coming up</strong> (days 8–21, SE London), or <strong>Further to travel</strong>{' '}
+    (outside SE London). Events marked <em>Recurring activity</em> go into the{' '}
+    <strong>Regular activities</strong> section instead.
+  </>,
+  <>
+    The <strong>Featured event</strong> block uses the next upcoming row from{' '}
+    <Link to="/admin/events" className="text-primary underline">Events</Link>.
+  </>,
 ]
 
 export default function Dashboard() {
@@ -133,11 +229,55 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Tips section */}
+      {/* Newsletter walkthrough */}
+      <div className="mb-10">
+        <div className="flex items-center gap-3 mb-4">
+          <Newspaper size={20} className="text-primary" />
+          <h2 className="font-heading text-lg font-semibold text-dark">How to build a newsletter</h2>
+        </div>
+        <p className="text-sm text-gray-500 mb-5">
+          The five steps below take you from an empty draft to HTML ready to paste into Brevo.
+        </p>
+        <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-100">
+          {newsletterSteps.map(({ icon: Icon, title, body }, i) => (
+            <div key={i} className="flex items-start gap-4 p-5">
+              <div className="flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                  <Icon size={18} />
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs font-mono text-gray-400">0{i + 1}</span>
+                  <h3 className="font-heading font-semibold text-dark">{title}</h3>
+                </div>
+                <p className="text-sm text-gray-600 mt-1 leading-relaxed">{body}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* How data flows into the newsletter */}
+        <div className="mt-6 bg-amber-50 border border-amber-200 rounded-2xl p-5">
+          <h3 className="font-heading font-semibold text-dark text-sm mb-3">
+            Where the newsletter content comes from
+          </h3>
+          <ul className="space-y-2.5 text-sm text-gray-700">
+            {newsletterNotes.map((note, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className="text-amber-600 shrink-0">•</span>
+                <span className="leading-relaxed">{note}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* General tips section */}
       <div className="bg-gradient-to-br from-dark to-dark/90 rounded-2xl p-6 text-white">
         <div className="flex items-center gap-3 mb-4">
           <BookOpen size={20} className="text-primary" />
-          <h2 className="font-heading text-lg font-semibold">Tips &amp; How-To</h2>
+          <h2 className="font-heading text-lg font-semibold">Other tips</h2>
         </div>
         <ul className="space-y-3">
           {tips.map((tip, i) => (

@@ -25,6 +25,7 @@ const LondonEventsManager = lazy(() => import('./pages/admin/LondonEventsManager
 const LondonEventForm = lazy(() => import('./pages/admin/LondonEventForm'))
 const NewsletterManager = lazy(() => import('./pages/admin/NewsletterManager'))
 const NewsletterEditor = lazy(() => import('./pages/admin/NewsletterEditor'))
+const NewsletterSectionEditor = lazy(() => import('./pages/admin/NewsletterSectionEditor'))
 const NewsletterAdvertisersManager = lazy(() => import('./pages/admin/NewsletterAdvertisersManager'))
 const NewsletterAdvertiserForm = lazy(() => import('./pages/admin/NewsletterAdvertiserForm'))
 const Dashboard = lazy(() => import('./pages/admin/Dashboard'))
@@ -77,6 +78,8 @@ function App() {
             <Route path="whats-on/new" element={<LondonEventForm />} />
             <Route path="whats-on/:id/edit" element={<LondonEventForm />} />
             <Route path="newsletter" element={<NewsletterManager />} />
+            <Route path="newsletter/editor" element={<NewsletterSectionEditor />} />
+            <Route path="newsletter/editor/:id" element={<NewsletterSectionEditor />} />
             <Route path="newsletter/:id/edit" element={<NewsletterEditor />} />
             <Route path="newsletter-advertisers" element={<NewsletterAdvertisersManager />} />
             <Route path="newsletter-advertisers/new" element={<NewsletterAdvertiserForm />} />

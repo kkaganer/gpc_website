@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router'
-import { Sparkles, Eye, Copy, CheckCircle2, Trash2 } from 'lucide-react'
+import { Sparkles, Eye, Copy, CheckCircle2, Trash2, Pencil } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import ConfirmModal from '../../components/admin/ConfirmModal'
 
@@ -96,9 +96,18 @@ export default function NewsletterManager() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="font-heading text-2xl font-bold text-dark">Newsletter</h1>
-        <p className="text-gray-500 text-sm mt-1">Generate and manage weekly newsletters</p>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-dark">Newsletter</h1>
+          <p className="text-gray-500 text-sm mt-1">Generate and manage weekly newsletters</p>
+        </div>
+        <Link
+          to="/admin/newsletter/editor"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-primary to-dark text-white text-sm font-bold hover:scale-[1.02] transition-transform whitespace-nowrap"
+        >
+          <Sparkles size={16} />
+          Open editor
+        </Link>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm p-6 mb-8">
@@ -170,8 +179,16 @@ export default function NewsletterManager() {
               </div>
               <div className="flex items-center gap-2">
                 <Link
+                  to={`/admin/newsletter/editor/${draft.id}`}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-white bg-gradient-to-r from-primary to-dark rounded-lg hover:scale-[1.02] transition-transform"
+                >
+                  <Pencil size={16} />
+                  Edit
+                </Link>
+                <Link
                   to={`/admin/newsletter/${draft.id}/edit`}
                   className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-500 hover:text-primary rounded-lg hover:bg-primary/5 transition-colors"
+                  title="Open the raw HTML preview (legacy view)"
                 >
                   <Eye size={16} />
                   Preview
