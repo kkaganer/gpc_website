@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { ArrowLeft } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import ImageUpload from '../../components/admin/ImageUpload'
 
 const emptyForm = {
   advertiser_name: '',
@@ -9,10 +10,12 @@ const emptyForm = {
   event_title: '',
   event_description: '',
   event_url: '',
+  image_url: '',
   newsletter_date: '',
   ad_type: 'free-listing',
   status: 'pending',
   notes: '',
+  is_brand_sponsor: false,
 }
 
 const adTypes = [
@@ -59,10 +62,12 @@ export default function NewsletterAdvertiserForm() {
           event_title: data.event_title || '',
           event_description: data.event_description || '',
           event_url: data.event_url || '',
+          image_url: data.image_url || '',
           newsletter_date: data.newsletter_date || '',
           ad_type: data.ad_type || 'free-listing',
           status: data.status || 'pending',
           notes: data.notes || '',
+          is_brand_sponsor: data.is_brand_sponsor || false,
         })
       }
       setLoading(false)
@@ -81,6 +86,11 @@ export default function NewsletterAdvertiserForm() {
 
     try {
       const payload = { ...form }
+      // For brand sponsors, event_title can be left blank in the form — the
+      // DB column is NOT NULL, so fall back to advertiser_name before writing.
+      if (payload.is_brand_sponsor && !payload.event_title.trim()) {
+        payload.event_title = payload.advertiser_name
+      }
       if (isEditing) {
         const { error: updateError } = await supabase
           .from('newsletter_advertisers')
@@ -154,39 +164,68 @@ export default function NewsletterAdvertiserForm() {
           </label>
         </div>
 
+        <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.is_brand_sponsor}
+              onChange={(e) => set('is_brand_sponsor', e.target.checked)}
+              className="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+            />
+            <span>
+              <span className="text-sm font-semibold text-dark">This is a brand sponsor (no specific event)</span>
+              <span className="block text-xs text-gray-500 mt-0.5">
+                Tick this if you're featuring the sponsor's brand, logo and description rather than a specific event they're running. Leave unticked if the sponsor is promoting a ticketed event.
+              </span>
+            </span>
+          </label>
+        </div>
+
         <label className="block">
-          <span className="text-sm font-semibold text-dark">Event Title *</span>
+          <span className="text-sm font-semibold text-dark">
+            {form.is_brand_sponsor ? 'Headline' : 'Event Title *'}
+          </span>
           <input
             type="text"
             value={form.event_title}
             onChange={(e) => set('event_title', e.target.value)}
-            required
+            required={!form.is_brand_sponsor}
             className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-            placeholder="e.g. Easter Music Party"
+            placeholder={form.is_brand_sponsor ? 'Leave blank to use the advertiser name' : 'e.g. Easter Music Party'}
           />
         </label>
 
         <label className="block">
-          <span className="text-sm font-semibold text-dark">Event Description</span>
+          <span className="text-sm font-semibold text-dark">
+            {form.is_brand_sponsor ? 'Tagline / description' : 'Event Description'}
+          </span>
           <textarea
             value={form.event_description}
             onChange={(e) => set('event_description', e.target.value)}
             rows={3}
             className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-            placeholder="Details to include in the newsletter"
+            placeholder={form.is_brand_sponsor ? 'A short line about what the sponsor does' : 'Details to include in the newsletter'}
           />
         </label>
 
         <label className="block">
-          <span className="text-sm font-semibold text-dark">Event URL</span>
+          <span className="text-sm font-semibold text-dark">
+            {form.is_brand_sponsor ? 'Website URL' : 'Event URL'}
+          </span>
           <input
             type="url"
             value={form.event_url}
             onChange={(e) => set('event_url', e.target.value)}
             className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-            placeholder="Link to event page"
+            placeholder={form.is_brand_sponsor ? "Link to the sponsor's homepage" : 'Link to event page'}
           />
         </label>
+
+        <div className="block">
+          <span className="text-sm font-semibold text-dark">Image / Logo</span>
+          <p className="text-xs text-gray-500 mb-2">Shown in the newsletter's Presenting or Supporter block.</p>
+          <ImageUpload value={form.image_url} onChange={(url) => set('image_url', url)} />
+        </div>
 
         <div className="grid grid-cols-3 gap-4">
           <label className="block">

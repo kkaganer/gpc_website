@@ -13,6 +13,7 @@ export function useLondonEvents({ dateFrom, dateTo, category } = {}) {
       .from('london_events')
       .select('*')
       .eq('approved', true)
+      .eq('is_recurring', false)
       .gte('date', today)
       .order('date', { ascending: true })
 

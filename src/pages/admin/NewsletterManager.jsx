@@ -4,6 +4,14 @@ import { Sparkles, Eye, Copy, CheckCircle2, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import ConfirmModal from '../../components/admin/ConfirmModal'
 
+function nearestFriday() {
+  const d = new Date()
+  const dow = d.getDay()
+  const daysUntilFriday = (5 - dow + 7) % 7
+  d.setDate(d.getDate() + daysUntilFriday)
+  return d.toISOString().split('T')[0]
+}
+
 export default function NewsletterManager() {
   const [drafts, setDrafts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -11,6 +19,10 @@ export default function NewsletterManager() {
   const [genError, setGenError] = useState('')
   const [copied, setCopied] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  const [introMessage, setIntroMessage] = useState(
+    "Hey folks! Every week I spend a couple of hours making this newsletter. I want to provide stuff that's useful to you, so let me know if you have feedback"
+  )
+  const [weekOf, setWeekOf] = useState(nearestFriday())
 
   useEffect(() => {
     document.title = 'Newsletter | GPC Admin'
@@ -31,11 +43,13 @@ export default function NewsletterManager() {
     setGenerating(true)
     setGenError('')
     try {
-      const { error } = await supabase.functions.invoke('generate-newsletter')
+      const { error } = await supabase.functions.invoke('generate-newsletter', {
+        body: { intro_message: introMessage, week_of: weekOf },
+      })
       if (error) throw error
       await fetchDrafts()
     } catch (err) {
-      setGenError('Failed to generate newsletter. Make sure the edge function is deployed and the API key is configured.')
+      setGenError('Failed to generate newsletter. Make sure the edge function is deployed.')
     } finally {
       setGenerating(false)
     }
@@ -82,19 +96,43 @@ export default function NewsletterManager() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-dark">Newsletter</h1>
-          <p className="text-gray-500 text-sm mt-1">Generate and manage weekly newsletters</p>
+      <div className="mb-8">
+        <h1 className="font-heading text-2xl font-bold text-dark">Newsletter</h1>
+        <p className="text-gray-500 text-sm mt-1">Generate and manage weekly newsletters</p>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm p-6 mb-8">
+        <h2 className="font-heading font-bold text-dark mb-4">Generate newsletter</h2>
+        <div className="space-y-4">
+          <label className="block">
+            <span className="text-sm font-semibold text-dark">Intro message from Aster</span>
+            <textarea
+              value={introMessage}
+              onChange={(e) => setIntroMessage(e.target.value)}
+              rows={3}
+              className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+              placeholder="Personal message shown at the top of this week's newsletter"
+            />
+          </label>
+          <label className="block max-w-xs">
+            <span className="text-sm font-semibold text-dark">Newsletter week of (Friday)</span>
+            <input
+              type="date"
+              value={weekOf}
+              onChange={(e) => setWeekOf(e.target.value)}
+              className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            <p className="text-xs text-gray-500 mt-1">Used to match advertisers tagged for this date.</p>
+          </label>
+          <button
+            onClick={handleGenerate}
+            disabled={generating}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-primary to-dark text-white text-sm font-bold hover:scale-[1.02] transition-transform disabled:opacity-50"
+          >
+            <Sparkles size={18} />
+            {generating ? 'Generating...' : 'Generate newsletter'}
+          </button>
         </div>
-        <button
-          onClick={handleGenerate}
-          disabled={generating}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-primary to-dark text-white text-sm font-bold hover:scale-[1.02] transition-transform disabled:opacity-50"
-        >
-          <Sparkles size={18} />
-          {generating ? 'Generating...' : "Generate This Week's Newsletter"}
-        </button>
       </div>
 
       {genError && (

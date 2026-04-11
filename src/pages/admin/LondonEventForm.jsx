@@ -21,10 +21,22 @@ const emptyForm = {
   approved: true,
   lat: '',
   lng: '',
+  is_recurring: false,
+  day_of_week: '',
+  recurring_time: '',
 }
 
 const areas = ['Greenwich', 'Lewisham', 'Southwark', 'Central London', 'Tower Hamlets', 'Bromley']
 const categories = ['Family', 'Outdoor', 'Arts', 'Sports', 'Music', 'Food']
+const daysOfWeek = [
+  { value: 1, label: 'Monday' },
+  { value: 2, label: 'Tuesday' },
+  { value: 3, label: 'Wednesday' },
+  { value: 4, label: 'Thursday' },
+  { value: 5, label: 'Friday' },
+  { value: 6, label: 'Saturday' },
+  { value: 0, label: 'Sunday' },
+]
 
 export default function LondonEventForm() {
   const { id } = useParams()
@@ -68,6 +80,9 @@ export default function LondonEventForm() {
           approved: data.approved ?? true,
           lat: data.lat ?? '',
           lng: data.lng ?? '',
+          is_recurring: data.is_recurring || false,
+          day_of_week: data.day_of_week ?? '',
+          recurring_time: data.recurring_time || '',
         })
       }
       setLoading(false)
@@ -90,6 +105,7 @@ export default function LondonEventForm() {
         source: 'manual',
         lat: form.lat !== '' ? parseFloat(form.lat) : null,
         lng: form.lng !== '' ? parseFloat(form.lng) : null,
+        day_of_week: form.day_of_week !== '' ? parseInt(form.day_of_week, 10) : null,
       }
       if (isEditing) {
         const { error: updateError } = await supabase
@@ -285,6 +301,45 @@ export default function LondonEventForm() {
           <div className="mt-1">
             <ImageUpload value={form.image_url} onChange={(url) => set('image_url', url)} />
           </div>
+        </div>
+
+        <div className="border-t border-gray-100 pt-5">
+          <label className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={form.is_recurring}
+              onChange={(e) => set('is_recurring', e.target.checked)}
+              className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+            />
+            <span className="text-sm font-semibold text-dark">Recurring activity (shows in newsletter "Regular activities" section)</span>
+          </label>
+          {form.is_recurring && (
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <label className="block">
+                <span className="text-sm font-semibold text-dark">Day of week</span>
+                <select
+                  value={form.day_of_week}
+                  onChange={(e) => set('day_of_week', e.target.value)}
+                  className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white"
+                >
+                  <option value="">Select day...</option>
+                  {daysOfWeek.map((d) => (
+                    <option key={d.value} value={d.value}>{d.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-dark">Recurring time label</span>
+                <input
+                  type="text"
+                  value={form.recurring_time}
+                  onChange={(e) => set('recurring_time', e.target.value)}
+                  className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  placeholder="e.g. Mondays 2pm"
+                />
+              </label>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">

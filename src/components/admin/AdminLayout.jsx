@@ -6,7 +6,7 @@ const sidebarLinks = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/events', label: 'Events', icon: CalendarDays },
   { to: '/admin/whats-on', label: "What's On", icon: MapPin },
-  { to: '/admin/newsletter', label: 'Newsletter', icon: Newspaper, comingSoon: true },
+  { to: '/admin/newsletter', label: 'Newsletter', icon: Newspaper },
   { to: '/admin/newsletter-advertisers', label: 'Advertisers', icon: Megaphone },
   { to: '/admin/users', label: 'Users', icon: Users },
 ]

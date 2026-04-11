@@ -135,7 +135,7 @@ export default function NewsletterEditor() {
             title="Newsletter Preview"
             className="w-full border-0"
             style={{ minHeight: '80vh' }}
-            sandbox="allow-same-origin"
+            sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
           />
         </div>
       ) : (
