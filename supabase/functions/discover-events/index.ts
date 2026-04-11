@@ -30,33 +30,52 @@ Deno.serve(async (req) => {
     const fromDate = now.toISOString().split('T')[0]
     const toDate = twoWeeksOut.toISOString().split('T')[0]
 
-    const prompt = `Today is ${fromDate}. Find family-friendly events in London happening ONLY between ${fromDate} and ${toDate}. EVERY event must be on or after ${fromDate} — do NOT include past events.
+    // Human-readable day/month labels for the prompt — Sonar handles natural
+    // date phrasing better than bare ISO strings.
+    const longFormatter = new Intl.DateTimeFormat('en-GB', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    })
+    const todayLabel = longFormatter.format(now)
+    const endLabel = longFormatter.format(twoWeeksOut)
 
-Focus on SE London (Greenwich, Lewisham, Southwark, Deptford, Blackheath, Woolwich, Eltham, Bromley) but include notable London-wide family events too.
+    const prompt = `Today is ${todayLabel} (${fromDate}).
 
-Prefer sources like Eventbrite London family events, Time Out London kids section, Kidrated, visitgreenwich.org.uk, Royal Museums Greenwich (National Maritime Museum, Cutty Sark), Horniman Museum, Mudchute Farm, Greenwich Theatre, The Albany Deptford, and Greenwich/Lewisham/Southwark council event pages.
+Find 15–20 family-friendly things to do in London between ${todayLabel} and ${endLabel} (${fromDate} to ${toDate}). Focus on South East London (Greenwich, Lewisham, Southwark, Deptford, Blackheath, Woolwich, Eltham, Bromley) but include notable London-wide family events too.
 
-Include a mix of: museum activities, theatre, outdoor events, craft workshops, baby/toddler groups, sports, food markets, seasonal activities.
+Prefer these kinds of sources when searching:
+- Royal Museums Greenwich, Horniman Museum, Greenwich Theatre, The Albany Deptford, Woolwich Works, Charlton House / Greenwich Heritage, Mycenae House, Dulwich Picture Gallery, Mudchute Farm, Ragman Children's Theatre
+- Greenwich / Lewisham / Southwark / Bromley council "what's on" pages
+- Eventbrite London family category, Time Out London kids, Kidrated, Visit Greenwich, London Mums, Secret London, Family Days Tried and Tested
+- English Heritage and National Trust London properties
 
-Only include events you can verify with a real event-page URL. If you can't find a working URL for an event, skip it.
+Include a mix across categories: museum activities, theatre, outdoor/nature, craft workshops, baby/toddler groups, sports, food markets, seasonal activities.
 
-Return 15–20 events. Each event object must have:
+DATE RULES:
+- Every event must happen on or between ${fromDate} and ${toDate}.
+- Do NOT include past events.
+- If an event recurs weekly, pick the next occurrence in the date window.
+
+URL RULES:
+- Every event must have a URL. If you can find the exact event page, use that. Otherwise use the venue's "what's on" page or the venue homepage — any working link that lets someone find out more.
+
+Return 15–20 events. It's fine to include some that are a bit borderline; the admin will review each one before publishing, so err on the side of more suggestions rather than fewer. Return a JSON object with a single "events" key whose value is an array. Each event object has these fields:
 - title: event name
 - venue: place name (e.g. "Horniman Museum")
-- date: YYYY-MM-DD (must be ${fromDate} to ${toDate})
+- date: YYYY-MM-DD
 - time: e.g. "10:00 - 14:00" or null
-- location: address or area
+- location: address or postcode
 - area: one of "Greenwich" | "Lewisham" | "Southwark" | "Central London" | "Tower Hamlets" | "Bromley"
-- lat: number (e.g. 51.4769)
-- lng: number (e.g. -0.0005)
+- lat: number (e.g. 51.4769) or null
+- lng: number (e.g. -0.0005) or null
 - description: 1-2 sentences
-- url: direct link to the event page
+- url: link to the event page or venue "what's on" page
 - category: one of "Family" | "Outdoor" | "Arts" | "Sports" | "Music" | "Food"
 - age_range: e.g. "All ages", "0-5"
 - price: e.g. "Free", "£5"
-- is_free: true/false
-
-Return a JSON object with a single "events" key containing the array.`
+- is_free: true/false`
 
     const response = await fetch('https://api.perplexity.ai/chat/completions', {
       method: 'POST',
@@ -66,13 +85,12 @@ Return a JSON object with a single "events" key containing the array.`
       },
       body: JSON.stringify({
         model: 'sonar-pro',
-        temperature: 0.2,
-        search_recency_filter: 'month',
+        max_tokens: 4000,
         messages: [
           {
             role: 'system',
             content:
-              'You are a helpful assistant that finds local family-friendly events in London. You always return a JSON object with a single "events" key whose value is an array of event objects. Never include markdown fences or explanatory prose.',
+              'You are a helpful assistant that finds local family-friendly events in London. You suggest 15-20 candidate events per request so an admin can review and approve them. Return a JSON object with a single "events" key whose value is an array. Never include markdown fences or explanatory prose.',
           },
           { role: 'user', content: prompt },
         ],
