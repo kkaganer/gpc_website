@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router'
-import { Sparkles, Eye, Copy, CheckCircle2, Trash2, Pencil } from 'lucide-react'
+import { Sparkles, Copy, CheckCircle2, Trash2, Pencil } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import ConfirmModal from '../../components/admin/ConfirmModal'
+import ConfirmModal from '../../components/ui/ConfirmModal'
 
 function nearestFriday() {
   const d = new Date()
@@ -184,14 +184,6 @@ export default function NewsletterManager() {
                 >
                   <Pencil size={16} />
                   Edit
-                </Link>
-                <Link
-                  to={`/admin/newsletter/${draft.id}/edit`}
-                  className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-500 hover:text-primary rounded-lg hover:bg-primary/5 transition-colors"
-                  title="Open the raw HTML preview (legacy view)"
-                >
-                  <Eye size={16} />
-                  Preview
                 </Link>
                 <button
                   onClick={() => handleCopyHtml(draft)}

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router'
 import { Plus, Pencil, Trash2, Mail, Sparkles } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import ConfirmModal from '../../components/admin/ConfirmModal'
+import ConfirmModal from '../../components/ui/ConfirmModal'
 
 const statusColors = {
   pending: 'bg-amber-50 text-amber-600',

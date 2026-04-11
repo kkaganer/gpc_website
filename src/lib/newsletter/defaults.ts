@@ -2,8 +2,8 @@
 // legacy fallback constructs, so a brand-new editor session looks identical
 // to what the "Generate newsletter" button produced before.
 
-import type { NewsletterConfig } from './renderer'
-import { formatDateLong } from './renderer'
+import type { NewsletterConfig } from '../../../supabase/functions/_shared/newsletter-renderer'
+import { formatDateLong } from '../../../supabase/functions/_shared/newsletter-renderer'
 
 function uid(): string {
   return 'b_' + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6)

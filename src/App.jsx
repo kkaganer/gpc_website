@@ -15,7 +15,6 @@ const Volunteers = lazy(() => import('./pages/Volunteers'))
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'))
 const GdprPolicy = lazy(() => import('./pages/GdprPolicy'))
 const SafeguardingPolicy = lazy(() => import('./pages/SafeguardingPolicy'))
-const JoinTest = lazy(() => import('./pages/JoinTest'))
 
 // Admin pages
 const AdminLogin = lazy(() => import('./pages/admin/Login'))
@@ -24,7 +23,6 @@ const EventForm = lazy(() => import('./pages/admin/EventForm'))
 const LondonEventsManager = lazy(() => import('./pages/admin/LondonEventsManager'))
 const LondonEventForm = lazy(() => import('./pages/admin/LondonEventForm'))
 const NewsletterManager = lazy(() => import('./pages/admin/NewsletterManager'))
-const NewsletterEditor = lazy(() => import('./pages/admin/NewsletterEditor'))
 const NewsletterSectionEditor = lazy(() => import('./pages/admin/NewsletterSectionEditor'))
 const NewsletterAdvertisersManager = lazy(() => import('./pages/admin/NewsletterAdvertisersManager'))
 const NewsletterAdvertiserForm = lazy(() => import('./pages/admin/NewsletterAdvertiserForm'))
@@ -56,7 +54,6 @@ function App() {
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/gdpr-policy" element={<GdprPolicy />} />
             <Route path="/safeguarding-policy" element={<SafeguardingPolicy />} />
-            <Route path="/join-test" element={<JoinTest />} />
           </Route>
 
           {/* Admin routes */}
@@ -80,7 +77,6 @@ function App() {
             <Route path="newsletter" element={<NewsletterManager />} />
             <Route path="newsletter/editor" element={<NewsletterSectionEditor />} />
             <Route path="newsletter/editor/:id" element={<NewsletterSectionEditor />} />
-            <Route path="newsletter/:id/edit" element={<NewsletterEditor />} />
             <Route path="newsletter-advertisers" element={<NewsletterAdvertisersManager />} />
             <Route path="newsletter-advertisers/new" element={<NewsletterAdvertiserForm />} />
             <Route path="newsletter-advertisers/:id/edit" element={<NewsletterAdvertiserForm />} />

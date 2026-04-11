@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { Plus, Check, X, Pencil, Trash2, Sparkles } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAllLondonEvents } from '../../hooks/useLondonEvents'
-import ConfirmModal from '../../components/admin/ConfirmModal'
+import ConfirmModal from '../../components/ui/ConfirmModal'
 
 export default function LondonEventsManager() {
   const { events, loading, error, refetch } = useAllLondonEvents()

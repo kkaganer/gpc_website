@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Trash2, X } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { fetchAdminUsers, createAdminUser, deleteAdminUser } from '../../lib/adminApi'
-import ConfirmModal from '../../components/admin/ConfirmModal'
+import ConfirmModal from '../../components/ui/ConfirmModal'
 
 export default function UsersManager() {
   const { user: currentUser } = useAuth()

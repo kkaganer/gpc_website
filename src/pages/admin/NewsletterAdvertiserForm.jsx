@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { ArrowLeft } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import ImageUpload from '../../components/admin/ImageUpload'
+import ImageUpload from '../../components/ui/ImageUpload'
 
 const emptyForm = {
   advertiser_name: '',

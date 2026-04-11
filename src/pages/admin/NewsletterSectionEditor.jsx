@@ -19,7 +19,7 @@ import {
   createRenderers,
   DEFAULT_COLORS,
   nearestFriday,
-} from '../../lib/newsletter/renderer'
+} from '../../../supabase/functions/_shared/newsletter-renderer'
 import { defaultConfig, uid } from '../../lib/newsletter/defaults'
 import { resolveDataForConfig } from '../../lib/newsletter/resolveData'
 import EventOverrideCard from '../../components/admin/newsletter/EventOverrideCard'

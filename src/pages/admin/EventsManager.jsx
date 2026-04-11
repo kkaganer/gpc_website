@@ -4,7 +4,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { useEvents } from '../../hooks/useEvents'
 import { deleteEvent } from '../../hooks/useEventMutations'
 import Badge from '../../components/ui/Badge'
-import ConfirmModal from '../../components/admin/ConfirmModal'
+import ConfirmModal from '../../components/ui/ConfirmModal'
 
 export default function EventsManager() {
   const { events, loading, error } = useEvents()

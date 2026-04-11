@@ -13,8 +13,8 @@ import type {
   PresentingBlock,
   SupporterBlock,
   RegularsBlock,
-} from './renderer'
-import { SE_LONDON_AREAS, addDays, nearestFriday } from './renderer'
+} from '../../../supabase/functions/_shared/newsletter-renderer'
+import { SE_LONDON_AREAS, addDays, nearestFriday } from '../../../supabase/functions/_shared/newsletter-renderer'
 
 export async function resolveDataForConfig(config: NewsletterConfig): Promise<ResolvedData> {
   const resolved: ResolvedData = {
