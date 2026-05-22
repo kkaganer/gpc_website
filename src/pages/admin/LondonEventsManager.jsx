@@ -26,8 +26,12 @@ export default function LondonEventsManager() {
     setSelected(new Set())
   }, [tab])
 
-  const pending = events.filter((e) => !e.approved)
-  const approved = events.filter((e) => e.approved)
+  const today = new Date().toISOString().split('T')[0]
+  // Both tabs hide past one-off events to cut clutter; recurring events
+  // (no single date, repeat weekly) always stay.
+  const isCurrent = (e) => e.is_recurring || !e.date || e.date >= today
+  const pending = events.filter((e) => !e.approved && isCurrent(e))
+  const approved = events.filter((e) => e.approved && isCurrent(e))
   const displayed = tab === 'pending' ? pending : approved
 
   function toggleSelect(id) {
