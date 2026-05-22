@@ -54,14 +54,6 @@ export default function Navbar() {
             <NavItem key={link.to} {...link} />
           ))}
           <a
-            href="https://sh1.sendinblue.com/amn2zqxhtxpfe.html?t=1774565443585"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="relative px-1 py-2 text-sm font-semibold transition-colors focus:ring-2 focus:ring-primary focus:outline-none rounded text-dark hover:text-primary"
-          >
-            Newsletter
-          </a>
-          <a
             href={CONTACT.instagramUrl}
             target="_blank"
             rel="noopener noreferrer"
@@ -133,14 +125,6 @@ export default function Navbar() {
                       {link.label}
                     </NavLink>
                   ))}
-                  <a
-                    href="https://sh1.sendinblue.com/amn2zqxhtxpfe.html?t=1774565443585"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3 py-2 rounded-lg text-base font-semibold text-dark hover:text-primary hover:bg-primary/5 transition-colors focus:ring-2 focus:ring-primary focus:outline-none"
-                  >
-                    Newsletter
-                  </a>
                   <a
                     href={CONTACT.instagramUrl}
                     target="_blank"

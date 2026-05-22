@@ -14,6 +14,7 @@ export const weeklyEvents = [
     time: 'Fridays, 1.45pm',
     location: 'Prince of Wales Pub, Blackheath',
     free: true,
-    contact: 'Sharon — 07930 524747',
+    link: 'mailto:gpc.communitynews@gmail.com?subject=Blackheath%20Meet-up',
+    linkLabel: 'Contact',
   },
 ];

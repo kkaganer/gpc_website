@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { MapPin, X } from 'lucide-react'
+import { geocodePostcode } from '../../lib/geocode'
 
 const categories = ['All', 'Family', 'Outdoor', 'Arts', 'Sports', 'Music', 'Food']
 const priceOptions = ['All', 'Free', 'Paid']
@@ -71,24 +72,10 @@ export default function EventFilters({ filters, onChange }) {
     setLookingUp(true)
     setPostcodeError('')
     try {
-      // Try full postcode first, then fall back to partial (outcode like SE13)
-      let lat, lng
-      const fullRes = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(cleaned)}`)
-      const fullData = await fullRes.json()
-      if (fullData.status === 200 && fullData.result) {
-        lat = fullData.result.latitude
-        lng = fullData.result.longitude
-      } else {
-        const partialRes = await fetch(`https://api.postcodes.io/outcodes/${encodeURIComponent(cleaned)}`)
-        const partialData = await partialRes.json()
-        if (partialData.status === 200 && partialData.result) {
-          lat = partialData.result.latitude
-          lng = partialData.result.longitude
-        }
-      }
-      if (lat && lng) {
+      const coords = await geocodePostcode(cleaned)
+      if (coords) {
         setPostcodeError('')
-        onChange({ ...filters, postcode: cleaned, postcodeLat: lat, postcodeLng: lng })
+        onChange({ ...filters, postcode: cleaned, postcodeLat: coords.lat, postcodeLng: coords.lng })
       } else {
         setPostcodeError('Postcode not found')
         onChange({ ...filters, postcode: '', postcodeLat: null, postcodeLng: null })
@@ -175,7 +162,7 @@ export default function EventFilters({ filters, onChange }) {
             value={postcodeInput}
             onChange={handlePostcodeChange}
             placeholder="Postcode"
-            className={`pl-8 pr-7 py-2 rounded-xl border text-sm bg-white text-dark font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 w-full md:w-28 placeholder-gray-400 ${
+            className={`pl-7 pr-6 py-2 rounded-xl border text-xs bg-white text-dark font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 w-full md:w-28 placeholder-gray-400 ${
               postcodeError ? 'border-red-300' : filters.postcodeLat ? 'border-green-300' : 'border-gray-200'
             }`}
           />

@@ -24,8 +24,8 @@ export default function EventCard({ event }) {
 
   return (
     <Card className="h-full flex flex-col">
-      <div className="bg-gray-50 h-56 sm:h-64">
-        <img src={imgSrc} alt={title} className="w-full h-full object-cover" loading="lazy" onError={(e) => { e.target.src = FALLBACK_IMAGE; }} />
+      <div className="bg-gray-50 h-56 sm:h-64 flex items-center justify-center p-2">
+        <img src={imgSrc} alt={title} className="max-w-full max-h-full object-contain" loading="lazy" onError={(e) => { e.target.src = FALLBACK_IMAGE; }} />
       </div>
       <div className="p-6">
         <Badge variant={status}>{statusLabels[status] || status}</Badge>

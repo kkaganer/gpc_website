@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { ArrowLeft } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { geocodePostcode } from '../../lib/geocode'
 import ImageUpload from '../../components/ui/ImageUpload'
 
 const emptyForm = {
@@ -10,6 +11,7 @@ const emptyForm = {
   time: '',
   venue: '',
   location: '',
+  postcode: '',
   area: '',
   description: '',
   url: '',
@@ -69,6 +71,7 @@ export default function LondonEventForm() {
           time: data.time || '',
           venue: data.venue || '',
           location: data.location || '',
+          postcode: data.postcode || '',
           area: data.area || '',
           description: data.description || '',
           url: data.url || '',
@@ -100,11 +103,24 @@ export default function LondonEventForm() {
     setSaving(true)
 
     try {
+      let lat = form.lat !== '' ? parseFloat(form.lat) : null
+      let lng = form.lng !== '' ? parseFloat(form.lng) : null
+
+      // If a postcode is given but coordinates were left blank, derive them.
+      // Manually-entered lat/lng always take precedence.
+      if (form.postcode && (lat === null || lng === null)) {
+        const coords = await geocodePostcode(form.postcode)
+        if (coords) {
+          lat = coords.lat
+          lng = coords.lng
+        }
+      }
+
       const payload = {
         ...form,
         source: 'manual',
-        lat: form.lat !== '' ? parseFloat(form.lat) : null,
-        lng: form.lng !== '' ? parseFloat(form.lng) : null,
+        lat,
+        lng,
         day_of_week: form.day_of_week !== '' ? parseInt(form.day_of_week, 10) : null,
       }
       if (isEditing) {
@@ -203,12 +219,11 @@ export default function LondonEventForm() {
 
         <div className="grid grid-cols-2 gap-4">
           <label className="block">
-            <span className="text-sm font-semibold text-dark">Address / Location *</span>
+            <span className="text-sm font-semibold text-dark">Address / Location</span>
             <input
               type="text"
               value={form.location}
               onChange={(e) => set('location', e.target.value)}
-              required
               className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
           </label>
@@ -226,6 +241,20 @@ export default function LondonEventForm() {
             </select>
           </label>
         </div>
+
+        <label className="block">
+          <span className="text-sm font-semibold text-dark">Postcode</span>
+          <input
+            type="text"
+            value={form.postcode}
+            onChange={(e) => set('postcode', e.target.value)}
+            className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            placeholder="e.g. SE10 8QY"
+          />
+          <span className="text-xs text-gray-400 mt-1 block">
+            Auto-fills the map coordinates below on save. Leave Latitude/Longitude blank to use it.
+          </span>
+        </label>
 
         <label className="block">
           <span className="text-sm font-semibold text-dark">Description</span>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { geocodePostcode } from '../../lib/geocode'
 
 const categories = ['Family', 'Outdoor', 'Arts', 'Sports', 'Music', 'Food']
 
@@ -11,6 +12,7 @@ export default function SubmitEventModal({ onClose }) {
     time: '',
     venue: '',
     location: '',
+    postcode: '',
     area: '',
     description: '',
     url: '',
@@ -33,8 +35,13 @@ export default function SubmitEventModal({ onClose }) {
     setSubmitting(true)
 
     try {
+      // Convert the postcode to coordinates so the event shows on the map.
+      // If the lookup fails the event still saves (an admin can fix it later).
+      const coords = await geocodePostcode(form.postcode)
       const { error: insertError } = await supabase.from('london_events').insert({
         ...form,
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null,
         source: 'community',
         approved: false,
       })
@@ -129,15 +136,29 @@ export default function SubmitEventModal({ onClose }) {
             </label>
 
             <label className="block">
-              <span className="text-sm font-semibold text-dark">Address / Location *</span>
+              <span className="text-sm font-semibold text-dark">Address / Location</span>
               <input
                 type="text"
                 value={form.location}
                 onChange={(e) => set('location', e.target.value)}
+                className="mt-1 w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                placeholder="e.g. Greenwich Park, Greenwich, London"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-semibold text-dark">Postcode *</span>
+              <input
+                type="text"
+                value={form.postcode}
+                onChange={(e) => set('postcode', e.target.value)}
                 required
                 className="mt-1 w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                placeholder="e.g. SE10 8QY, Greenwich, London"
+                placeholder="e.g. SE10 8QY"
               />
+              <span className="text-xs text-gray-400 mt-1 block">
+                Used to place your event on the map.
+              </span>
             </label>
 
             <label className="block">
