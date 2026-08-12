@@ -21,6 +21,7 @@ const AdminLogin = lazy(() => import('./pages/admin/Login'))
 const EventsManager = lazy(() => import('./pages/admin/EventsManager'))
 const EventForm = lazy(() => import('./pages/admin/EventForm'))
 const LondonEventsManager = lazy(() => import('./pages/admin/LondonEventsManager'))
+const DiscoveryManager = lazy(() => import('./pages/admin/DiscoveryManager'))
 const LondonEventForm = lazy(() => import('./pages/admin/LondonEventForm'))
 const NewsletterManager = lazy(() => import('./pages/admin/NewsletterManager'))
 const NewsletterSectionEditor = lazy(() => import('./pages/admin/NewsletterSectionEditor'))
@@ -74,6 +75,7 @@ function App() {
             <Route path="whats-on" element={<LondonEventsManager />} />
             <Route path="whats-on/new" element={<LondonEventForm />} />
             <Route path="whats-on/:id/edit" element={<LondonEventForm />} />
+            <Route path="discovery" element={<DiscoveryManager />} />
             <Route path="newsletter" element={<NewsletterManager />} />
             <Route path="newsletter/editor" element={<NewsletterSectionEditor />} />
             <Route path="newsletter/editor/:id" element={<NewsletterSectionEditor />} />

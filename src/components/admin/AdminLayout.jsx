@@ -1,11 +1,13 @@
 import { NavLink, Outlet, useNavigate } from 'react-router'
-import { LayoutDashboard, CalendarDays, MapPin, Newspaper, Megaphone, Users, LogOut } from 'lucide-react'
+import { LayoutDashboard, CalendarDays, MapPin, Radar, Newspaper, Megaphone, Users, LogOut } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
 const sidebarLinks = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/events', label: 'Events', icon: CalendarDays },
   { to: '/admin/whats-on', label: "What's On", icon: MapPin },
+  // Sits directly under What's On: approving here publishes into it.
+  { to: '/admin/discovery', label: 'Discovery', icon: Radar },
   { to: '/admin/newsletter', label: 'Newsletter', icon: Newspaper },
   { to: '/admin/newsletter-advertisers', label: 'Advertisers', icon: Megaphone },
   { to: '/admin/users', label: 'Users', icon: Users },
