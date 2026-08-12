@@ -76,11 +76,45 @@ export async function backfillCoordinates() {
   return Array.isArray(data) ? data[0] : data
 }
 
-/** Kick off an ingest run. Optionally limit to specific source ids. */
+/**
+ * Start an ingest run. Returns immediately with a batch id — the work continues
+ * server-side. Supabase enforces a 150s request idle timeout on EVERY plan, so
+ * holding the request open for a ~156s run returned a 504 and lost the whole
+ * run. Nothing waits on the response now.
+ */
 export async function runIngest(sources = null) {
   const { data, error } = await supabase.functions.invoke('ingest-activities', {
     body: sources ? { sources } : {},
   })
   if (error) throw error
+  return data // { batch_id, sources_queued }
+}
+
+/** One progress snapshot for a batch. */
+export async function getBatchStatus(batchId) {
+  const { data, error } = await supabase
+    .from('ingest_batch_status')
+    .select('*')
+    .eq('id', batchId)
+    .maybeSingle()
+  if (error) throw error
   return data
+}
+
+/**
+ * Poll a batch to completion, calling onProgress after each check.
+ * Gives up after `timeoutMs` and reports that plainly rather than hanging —
+ * the run may still be going server-side, which the message says.
+ */
+export async function pollBatch(batchId, onProgress, { intervalMs = 3000, timeoutMs = 420000 } = {}) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const status = await getBatchStatus(batchId)
+    if (status) {
+      onProgress?.(status)
+      if (status.status === 'complete' || status.status === 'failed') return status
+    }
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+  return { status: 'timeout', id: batchId }
 }

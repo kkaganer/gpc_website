@@ -4,10 +4,16 @@
 // in `ingest_runs` per source. Designed to be driven by pg_cron on a schedule and
 // invokable manually from the admin UI.
 //
-// Deliberately NOT fire-and-forget: a source that quietly stops returning data is
-// the most likely long-run failure of this platform, so every run records its
-// yield and `consecutive_failures` is tracked per source. Zero-yield is a
-// monitored condition, not a silent success.
+// FIRE-AND-POLL. The caller gets a batch id immediately and the work continues
+// in the background via EdgeRuntime.waitUntil(). Supabase enforces a 150s
+// REQUEST IDLE TIMEOUT on every plan — it is not a free-tier limit and upgrading
+// does not lift it (only the worker wall clock goes 150s -> 400s). Holding the
+// request open for a 156s run returned a 504 with no results and no ingest_runs
+// rows closed, losing the entire run. Nothing waits on the response now.
+//
+// Per-source yield is still recorded: a source that quietly stops returning data
+// is the most likely long-run failure of this platform, so zero-yield is a
+// monitored condition rather than a silent success.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import type { Adapter, AdapterContext } from '../_shared/discovery/types.ts'
@@ -98,6 +104,15 @@ Deno.serve(async (req) => {
   const ordered = [...((sources ?? []) as SourceRow[])].sort((a, b) =>
     (a.adapter === 'llm-discovery' ? -1 : 0) - (b.adapter === 'llm-discovery' ? -1 : 0))
 
+  // Register the batch first so the client has something to poll straight away.
+  const { data: batch } = await supabase
+    .from('ingest_batches')
+    .insert({ requested, total_sources: ordered.length })
+    .select('id')
+    .single()
+  const batchId = batch?.id ?? null
+
+  const runAll = async () => {
   const results: Array<Record<string, unknown>> = []
 
   for (const source of ordered) {
@@ -114,7 +129,7 @@ Deno.serve(async (req) => {
 
     const { data: runRow } = await supabase
       .from('ingest_runs')
-      .insert({ source_id: source.id })
+      .insert({ source_id: source.id, batch_id: batchId })
       .select('id')
       .single()
     const runId = runRow?.id
@@ -178,13 +193,37 @@ Deno.serve(async (req) => {
     }
   }
 
+  if (batchId) {
+    await supabase.from('ingest_batches').update({
+      finished_at: new Date().toISOString(),
+      status: 'complete',
+    }).eq('id', batchId)
+  }
+  return results
+  }
+
+  // Run in the background and return immediately. waitUntil keeps the worker
+  // alive after the response is sent; without it the runtime may tear the
+  // isolate down mid-run.
+  const work = runAll().catch(async (err) => {
+    const message = err instanceof Error ? err.message : String(err)
+    if (batchId) {
+      await supabase.from('ingest_batches').update({
+        finished_at: new Date().toISOString(), status: 'failed', error: message,
+      }).eq('id', batchId)
+    }
+  })
+  // @ts-ignore - EdgeRuntime is provided by the Supabase Deno runtime.
+  if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) EdgeRuntime.waitUntil(work)
+  else await work
+
   return new Response(
     JSON.stringify({
       success: true,
-      elapsed_ms: Date.now() - started,
-      sources_run: results.length,
-      results,
+      batch_id: batchId,
+      sources_queued: ordered.length,
+      accepted_ms: Date.now() - started,
     }),
-    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
   )
 })

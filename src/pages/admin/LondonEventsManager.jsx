@@ -4,7 +4,7 @@ import { Plus, Check, X, Pencil, Trash2, Sparkles, MapPin } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { geocodePostcode } from '../../lib/geocode'
 import { useAllLondonEvents } from '../../hooks/useLondonEvents'
-import { runIngest } from '../../hooks/useDiscoveredActivities'
+import { runIngest, pollBatch } from '../../hooks/useDiscoveredActivities'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 
 export default function LondonEventsManager() {
@@ -97,15 +97,28 @@ export default function LondonEventsManager() {
     setDiscoverError('')
     setDiscoverResult('')
     try {
-      const result = await runIngest()
-      const added = (result?.results ?? []).reduce((n, r) => n + (r.inserted ?? 0), 0)
-      const failed = (result?.results ?? []).filter((r) => r.ok === false)
-      setDiscoverResult(
-        `Found ${added} new activit${added === 1 ? 'y' : 'ies'} across ` +
-        `${result?.sources_run ?? 0} sources` +
-        (failed.length ? `, ${failed.length} source(s) failed` : '') +
-        '. Review them under Discovery.',
-      )
+      const { batch_id: batchId, sources_queued: queued } = await runIngest()
+      setDiscoverResult(`Discovery started — 0/${queued} sources done...`)
+
+      const final = await pollBatch(batchId, (s) => {
+        setDiscoverResult(
+          `Discovery running — ${s.sources_finished}/${s.total_sources} sources done, ` +
+          `${s.inserted} new so far...`,
+        )
+      })
+
+      if (final.status === 'timeout') {
+        setDiscoverResult('Still running server-side — check Discovery in a minute.')
+      } else if (final.status === 'failed') {
+        setDiscoverError(`Discovery failed: ${final.error ?? 'unknown error'}`)
+      } else {
+        setDiscoverResult(
+          `Found ${final.inserted} new activit${final.inserted === 1 ? 'y' : 'ies'} ` +
+          `across ${final.sources_finished} sources` +
+          (final.sources_failed ? `, ${final.sources_failed} failed` : '') +
+          '. Review them under Discovery.',
+        )
+      }
     } catch (err) {
       setDiscoverError(`Discovery failed: ${err.message}`)
     } finally {

@@ -5,6 +5,7 @@ import {
   publishActivity,
   rejectActivity,
   runIngest,
+  pollBatch,
   backfillCoordinates,
 } from '../../hooks/useDiscoveredActivities'
 
@@ -85,16 +86,29 @@ export default function DiscoveryManager() {
     setBusy(true)
     setMessage('')
     try {
-      const result = await runIngest()
-      const total = (result?.results ?? []).reduce((n, r) => n + (r.inserted ?? 0), 0)
-      const failed = (result?.results ?? []).filter((r) => r.ok === false)
-      setMessage(
-        `Ingest finished in ${Math.round((result?.elapsed_ms ?? 0) / 1000)}s — ` +
-        `${total} new activit${total === 1 ? 'y' : 'ies'} across ${result?.sources_run ?? 0} sources.` +
-        (failed.length ? ` ${failed.length} source(s) failed.` : ''),
-      )
+      const { batch_id: batchId, sources_queued: queued } = await runIngest()
+      setMessage(`Discovery started — 0/${queued} sources done...`)
+
+      const final = await pollBatch(batchId, (s) => {
+        setMessage(
+          `Discovery running — ${s.sources_finished}/${s.total_sources} sources done, ` +
+          `${s.inserted} new activit${s.inserted === 1 ? 'y' : 'ies'} so far...`,
+        )
+      })
+
+      if (final.status === 'timeout') {
+        setMessage('Still running server-side — reload in a minute to see the results.')
+      } else if (final.status === 'failed') {
+        setMessage(`Discovery failed: ${final.error ?? 'unknown error'}`)
+      } else {
+        setMessage(
+          `Discovery finished — ${final.inserted} new activit${final.inserted === 1 ? 'y' : 'ies'} ` +
+          `from ${final.sources_finished} sources` +
+          (final.sources_failed ? `, ${final.sources_failed} failed` : '') + '.',
+        )
+      }
     } catch (err) {
-      setMessage(`Ingest failed: ${err.message}`)
+      setMessage(`Discovery failed: ${err.message}`)
     }
     setBusy(false)
     refetch()
