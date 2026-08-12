@@ -18,6 +18,7 @@
 
 import type { Adapter, AdapterContext, AdapterResult, ActivityDraft } from '../types.ts'
 import { inferAge, isUnderFive } from '../age.ts'
+import { inferTermTime } from '../term-time.ts'
 
 const TIMEOUT_MS = 30_000
 const HORIZON_DAYS = 56
@@ -163,7 +164,7 @@ export const thFamilyHubsAdapter: Adapter = async (
       schedule: [],
       starts_on: null,
       ends_on: null,
-      term_time_only: null,
+      term_time_only: inferTermTime(title, row.EventDescription, row.EventSubtitle),
 
       age_min_months: age.min,
       age_max_months: age.max,

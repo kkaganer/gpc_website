@@ -18,6 +18,7 @@
 import type { Adapter, AdapterContext, AdapterResult, ActivityDraft, ScheduleSlot } from '../types.ts'
 import { passesPrefilter, passesArea, resolvePostcodes, normalisePostcode, type AreaPolicy } from '../geo.ts'
 import { inferAge, isUnderFive } from '../age.ts'
+import { inferTermTime } from '../term-time.ts'
 import { parseIsoDuration } from '../occurrences.ts'
 
 const MAX_PAGES = 25
@@ -269,10 +270,9 @@ export const openactiveAdapter: Adapter = async (ctx: AdapterContext): Promise<A
       starts_on,
       ends_on,
 
-      // Leisure-centre sessions generally run through the holidays — and often
-      // ADD holiday programming. Asserting false would be a guess, so this stays
-      // unknown and the publication gate decides.
-      term_time_only: null,
+      // Measured: 0 of 500 Southwark series mention term time, so this is
+      // almost always null. Detect anyway in case a publisher starts saying it.
+      term_time_only: inferTermTime(title, data.description, data.attendeeInstructions),
 
       age_min_months: age.min,
       age_max_months: age.max,

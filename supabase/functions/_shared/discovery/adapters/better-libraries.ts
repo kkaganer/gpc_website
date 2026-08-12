@@ -26,6 +26,7 @@
 import type { Adapter, AdapterContext, AdapterResult, ActivityDraft } from '../types.ts'
 import { passesPrefilter, passesArea, resolvePostcodes, normalisePostcode, type AreaPolicy } from '../geo.ts'
 import { inferAge, isUnderFive } from '../age.ts'
+import { inferTermTime } from '../term-time.ts'
 
 const TIMEOUT_MS = 20_000
 
@@ -226,9 +227,9 @@ export const betterLibrariesAdapter: Adapter = async (
       schedule: [],
       starts_on: null,
       ends_on: null,
-      // Library sessions are heavily term-time bound, but the card doesn't say
-      // so. Unknown is honest; the publication gate decides.
-      term_time_only: null,
+      // Only set when the card SAYS so — "term time only" -> true, "school
+      // holiday fun" -> false, silence -> null (never suppressed).
+      term_time_only: inferTermTime(p.title, p.description, p.tail),
 
       age_min_months: age.min,
       age_max_months: age.max,

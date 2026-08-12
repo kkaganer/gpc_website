@@ -17,6 +17,7 @@
 
 import type { Adapter, AdapterContext, AdapterResult, ActivityDraft } from '../types.ts'
 import { inferAge, isUnderFive } from '../age.ts'
+import { inferTermTime } from '../term-time.ts'
 import { normalisePostcode, resolvePostcodes } from '../geo.ts'
 
 const TIMEOUT_MS = 25_000
@@ -175,7 +176,7 @@ export const lewishamLibrariesAdapter: Adapter = async (
       schedule: [],
       starts_on: null,
       ends_on: null,
-      term_time_only: null,
+      term_time_only: inferTermTime(title, description),
 
       age_min_months: age.min,
       age_max_months: age.max,
