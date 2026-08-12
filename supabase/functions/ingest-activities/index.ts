@@ -17,6 +17,7 @@ import { betterLibrariesAdapter } from '../_shared/discovery/adapters/better-lib
 import { lewishamLibrariesAdapter } from '../_shared/discovery/adapters/lewisham-libraries.ts'
 import { thFamilyHubsAdapter } from '../_shared/discovery/adapters/th-family-hubs.ts'
 import { classForKidsAdapter } from '../_shared/discovery/adapters/classforkids.ts'
+import { llmDiscoveryAdapter } from '../_shared/discovery/adapters/llm-discovery.ts'
 import { writeActivities, emptyCounters } from '../_shared/discovery/writer.ts'
 
 const corsHeaders = {
@@ -31,13 +32,21 @@ const ADAPTERS: Record<string, Adapter> = {
   'rss': lewishamLibrariesAdapter,
   'th-family-hubs': thFamilyHubsAdapter,
   'classforkids': classForKidsAdapter,
+  'llm-discovery': llmDiscoveryAdapter,
 }
 
 // Supabase edge functions cap at 150s wall clock (free) / 400s (paid). Leave
 // headroom so the run can always finish writing and record its ingest_runs row
 // rather than being killed mid-flight with no trace.
-const WALL_CLOCK_BUDGET_MS = 110_000
-const PER_SOURCE_BUDGET_MS = 45_000
+// Supabase edge functions on the FREE tier hard-stop at 150s with an
+// IDLE_TIMEOUT 504 — measured, not assumed. Budgeting above that produced a 504
+// with no ingest_runs rows closed and no results returned at all. Stay clear of
+// it so the call always returns a usable report, skipping what it cannot fit.
+const WALL_CLOCK_BUDGET_MS = 128_000
+const PER_SOURCE_BUDGET_MS = 40_000
+// The LLM source makes several sequential OpenAI round-trips (search per area,
+// then a batched verification), so it needs materially longer than a feed fetch.
+const LLM_SOURCE_BUDGET_MS = 150_000
 
 interface SourceRow {
   id: string
@@ -82,9 +91,16 @@ Deno.serve(async (req) => {
     )
   }
 
+  // Run LLM discovery FIRST. It is the only source reaching the long tail, and
+  // it must not be the one starved when the wall clock runs short — the feeds
+  // resume cheaply next click because their RPDE cursors persist, whereas a
+  // skipped LLM run loses that day's novel events entirely.
+  const ordered = [...((sources ?? []) as SourceRow[])].sort((a, b) =>
+    (a.adapter === 'llm-discovery' ? -1 : 0) - (b.adapter === 'llm-discovery' ? -1 : 0))
+
   const results: Array<Record<string, unknown>> = []
 
-  for (const source of (sources ?? []) as SourceRow[]) {
+  for (const source of ordered) {
     if (Date.now() > deadline) {
       results.push({ source: source.id, skipped: 'wall-clock budget exhausted' })
       continue
@@ -106,7 +122,10 @@ Deno.serve(async (req) => {
     const ctx: AdapterContext = {
       cursor: source.cursor,
       config: source.config ?? {},
-      deadline: Math.min(deadline, Date.now() + PER_SOURCE_BUDGET_MS),
+      deadline: Math.min(
+        deadline,
+        Date.now() + (source.adapter === 'llm-discovery' ? LLM_SOURCE_BUDGET_MS : PER_SOURCE_BUDGET_MS),
+      ),
     }
 
     try {

@@ -46,7 +46,7 @@ const SEARCH_CALL_USD = 0.010
 // "explicitly hunt the long tail", because the whole question is whether an LLM
 // adds anything ON TOP OF the feeds rather than restating them.
 // ---------------------------------------------------------------------------
-const PROMPTS: Record<string, (from: string, to: string) => string> = {
+const PROMPTS: Record<string, (from: string, to: string, area?: string) => string> = {
   // Mirrors the original discover-events prompt. The control.
   baseline: (from, to) => `
 Find family-friendly events happening in South East London between ${from} and ${to}.
@@ -75,6 +75,32 @@ a direct link to the specific event page (not a homepage), price, and the age ra
 Only include events you can find a real, working link for. If you are unsure an
 event is genuinely happening in this window, leave it out.`.trim(),
 
+  // Same long-tail targeting, but explicitly demands MULTIPLE searches. The
+  // first evaluation showed the model issuing only ONE web_search call per run
+  // regardless of prompt, which caps recall no matter how good the targeting is.
+  // Since the $0.01 search fee dominates cost, more searches is the cheapest
+  // available lever on yield.
+  search_harder: (from, to) => `
+Find events for children UNDER 5 and their parents/carers in South East London
+between ${from} and ${to}.
+
+Run AT LEAST SIX SEPARATE WEB SEARCHES before answering — do not rely on one.
+Search each of these areas individually: Greenwich, Deptford/New Cross, Lewisham,
+Blackheath, Woolwich/Charlton, Eltham. Vary the wording between searches
+("toddler group", "stay and play", "baby class", "parent and toddler", "under 5s
+what's on"). Then combine everything you found.
+
+We already hold complete listings from Better/GLL leisure centres, council
+libraries, the Spektrix theatres (The Albany, Greenwich Theatre, Woolwich Works,
+Blackheath Halls, Unicorn), Tower Hamlets family hubs and ClassForKids — do NOT
+return those. Prioritise church and community-hall toddler groups, independent
+baby classes, children's centres, pop-ups and parent-network meetups.
+
+For each event give: title, venue, full UK postcode, date (YYYY-MM-DD), start time,
+a direct link to the specific event page (not a homepage), price, and the age range.
+Only include events with a real working link. Omit anything aimed at 5s and over,
+and anything you are not confident is genuinely running in this window.`.trim(),
+
   // Same long-tail targeting, but pushes hard on the under-5 specifics the
   // research identified as decision-relevant: age in months, drop-in vs booked,
   // term-time, buggy access.
@@ -93,7 +119,41 @@ direct link to the event page, price (or "Free"), the youngest and oldest age in
 MONTHS it admits, whether it is drop-in or needs booking, and whether it runs only
 in term time. Prefer free, weekly, walk-in sessions. Omit anything you cannot find
 a working link for, and anything aimed at children 5 and over.`.trim(),
+
+  // Per-AREA prompt used by the fan-out config below.
+  //
+  // The evaluation showed the model issuing exactly ONE web_search call per run
+  // regardless of how forcefully the prompt demanded more — so search breadth
+  // cannot be bought with wording. Fanning out in CODE (one call per area)
+  // makes breadth deterministic instead of discretionary, and guarantees even
+  // geographic coverage rather than whichever area the model happened to pick.
+  area_scoped: (from, to, area?: string) => `
+Find events for children UNDER 5 and their parents/carers in ${area ?? 'South East London'}
+between ${from} and ${to}.
+
+Search specifically within ${area ?? 'South East London'} — do not broaden to other areas.
+
+We already hold complete listings from Better/GLL leisure centres, council
+libraries, the Spektrix theatres (The Albany, Greenwich Theatre, Woolwich Works,
+Blackheath Halls, Unicorn), Tower Hamlets family hubs and ClassForKids — do NOT
+return those. Prioritise church and community-hall parent-and-toddler groups,
+stay-and-play sessions, independent baby classes, children's centres, pop-ups and
+parent-network meetups.
+
+For each event give: title, venue, full UK postcode, date (YYYY-MM-DD), start time,
+a direct link to the specific event page (not a homepage), price, and the age range.
+Only include events with a real working link. Omit anything aimed at 5s and over,
+and anything you are not confident is genuinely running in this window.`.trim(),
 }
+
+const FANOUT_AREAS = [
+  'Greenwich and Charlton, London',
+  'Deptford and New Cross, London',
+  'Lewisham and Catford, London',
+  'Blackheath and Lee, London',
+  'Woolwich and Plumstead, London',
+  'Eltham and Mottingham, London',
+]
 
 const SCHEMA = {
   type: 'object',
@@ -190,6 +250,12 @@ Deno.serve(async (req) => {
     let candidates: Candidate[] = []
     let inputTokens = 0, outputTokens = 0, searchCalls = 0, errorMsg: string | null = null
 
+    // `fanout: true` issues one request PER AREA instead of one for the whole
+    // patch. Costs ~6x per run but buys deterministic geographic coverage, which
+    // the prompt alone provably could not.
+    const areas: Array<string | undefined> = (cfg as any).fanout ? FANOUT_AREAS : [undefined]
+
+    for (const area of areas) {
     try {
       const res = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
@@ -199,7 +265,7 @@ Deno.serve(async (req) => {
         },
         body: JSON.stringify({
           model: cfg.model,
-          input: promptFn(from, to),
+          input: promptFn(from, to, area),
           tools: [{ type: 'web_search', search_context_size: cfg.search_context ?? 'medium' }],
           text: { format: { type: 'json_schema', name: 'events', schema: SCHEMA, strict: true } },
         }),
@@ -208,9 +274,9 @@ Deno.serve(async (req) => {
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error?.message ?? `HTTP ${res.status}`)
 
-      inputTokens = json?.usage?.input_tokens ?? 0
-      outputTokens = json?.usage?.output_tokens ?? 0
-      searchCalls = (json?.output ?? []).filter((o: any) => o?.type === 'web_search_call').length
+      inputTokens += json?.usage?.input_tokens ?? 0
+      outputTokens += json?.usage?.output_tokens ?? 0
+      searchCalls += (json?.output ?? []).filter((o: any) => o?.type === 'web_search_call').length
 
       // Structured output arrives as text on the message item.
       const text = (json?.output ?? [])
@@ -218,10 +284,21 @@ Deno.serve(async (req) => {
         .map((c: any) => c?.text)
         .filter(Boolean)
         .join('')
-      candidates = JSON.parse(text || '{}')?.events ?? []
+      candidates.push(...(JSON.parse(text || '{}')?.events ?? []))
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : String(err)
     }
+    }
+
+    // Areas overlap at their edges, so collapse before scoring — otherwise the
+    // same event counts several times and inflates the yield.
+    const seenKey = new Set<string>()
+    candidates = candidates.filter((c) => {
+      const k = `${(c.title ?? '').toLowerCase().trim()}|${(c.postcode ?? '').replace(/\s/g, '').toUpperCase()}|${c.date ?? ''}`
+      if (seenKey.has(k)) return false
+      seenKey.add(k)
+      return true
+    })
 
     // ---------------- score ----------------
     const resolved = await resolvePostcodes(candidates.map((c) => c.postcode))
