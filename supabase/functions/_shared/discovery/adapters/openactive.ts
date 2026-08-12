@@ -211,25 +211,37 @@ export const openactiveAdapter: Adapter = async (ctx: AdapterContext): Promise<A
     url = next
   }
 
+  // Bookwhen publishes `location.address` as a plain STRING rather than a
+  // PostalAddress object, so reaching for `.postalCode` silently yields
+  // undefined and every record is dropped as no_postcode. Pull a postcode out
+  // of the string form too.
+  const UK_PC = /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i
+  const postcodeOf = (data: Record<string, any>): string | null => {
+    const addr = data?.location?.address
+    if (addr && typeof addr === 'object' && addr.postalCode) return String(addr.postalCode)
+    if (typeof addr === 'string') return addr.match(UK_PC)?.[0] ?? null
+    const name = data?.location?.name
+    if (typeof name === 'string') return name.match(UK_PC)?.[0] ?? null
+    return null
+  }
+
   // --- cheap prefilter before any network geocoding -------------------------
   const prefiltered: Candidate[] = []
   for (const c of candidates) {
-    const postcode = c.data?.location?.address?.postalCode
+    const postcode = postcodeOf(c.data)
     if (!postcode) { stats.no_postcode++; continue }
     if (!passesPrefilter(postcode, policy)) { stats.out_of_area_prefilter++; continue }
     prefiltered.push(c)
   }
 
   // --- authoritative borough + coordinates ---------------------------------
-  const resolved = await resolvePostcodes(
-    prefiltered.map((c) => c.data?.location?.address?.postalCode),
-  )
+  const resolved = await resolvePostcodes(prefiltered.map((c) => postcodeOf(c.data)))
 
   const activities: ActivityDraft[] = []
   const today = new Date().toISOString().slice(0, 10)
 
   for (const { uid, data } of prefiltered) {
-    const pc = normalisePostcode(data?.location?.address?.postalCode)
+    const pc = normalisePostcode(postcodeOf(data))
     const place = pc ? resolved.get(pc) : undefined
     if (!place || !passesArea(place, policy)) { stats.out_of_area_resolved++; continue }
 
@@ -258,7 +270,9 @@ export const openactiveAdapter: Adapter = async (ctx: AdapterContext): Promise<A
       category: Array.isArray(data.category) ? data.category[0] ?? null : data.category ?? null,
 
       venue_name: typeof location.name === 'string' ? location.name : null,
-      address: [address.streetAddress, address.addressLocality].filter(Boolean).join(', ') || null,
+      address: typeof address === 'string'
+        ? address
+        : [address?.streetAddress, address?.addressLocality].filter(Boolean).join(', ') || null,
       postcode: place.postcode,
       // Prefer the feed's own coordinates; fall back to the postcode centroid.
       lat: typeof location.geo?.latitude === 'number' ? location.geo.latitude : place.lat,

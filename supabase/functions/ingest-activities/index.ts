@@ -16,6 +16,7 @@ import { spektrixAdapter } from '../_shared/discovery/adapters/spektrix.ts'
 import { betterLibrariesAdapter } from '../_shared/discovery/adapters/better-libraries.ts'
 import { lewishamLibrariesAdapter } from '../_shared/discovery/adapters/lewisham-libraries.ts'
 import { thFamilyHubsAdapter } from '../_shared/discovery/adapters/th-family-hubs.ts'
+import { classForKidsAdapter } from '../_shared/discovery/adapters/classforkids.ts'
 import { writeActivities, emptyCounters } from '../_shared/discovery/writer.ts'
 
 const corsHeaders = {
@@ -29,6 +30,7 @@ const ADAPTERS: Record<string, Adapter> = {
   'better-libraries': betterLibrariesAdapter,
   'rss': lewishamLibrariesAdapter,
   'th-family-hubs': thFamilyHubsAdapter,
+  'classforkids': classForKidsAdapter,
 }
 
 // Supabase edge functions cap at 150s wall clock (free) / 400s (paid). Leave

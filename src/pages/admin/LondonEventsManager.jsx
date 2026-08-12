@@ -4,6 +4,7 @@ import { Plus, Check, X, Pencil, Trash2, Sparkles, MapPin } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { geocodePostcode } from '../../lib/geocode'
 import { useAllLondonEvents } from '../../hooks/useLondonEvents'
+import { runIngest } from '../../hooks/useDiscoveredActivities'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 
 export default function LondonEventsManager() {
@@ -14,6 +15,7 @@ export default function LondonEventsManager() {
   const [deleting, setDeleting] = useState(null)
   const [discovering, setDiscovering] = useState(false)
   const [discoverError, setDiscoverError] = useState('')
+  const [discoverResult, setDiscoverResult] = useState('')
   const [backfilling, setBackfilling] = useState(false)
   const [backfillResult, setBackfillResult] = useState('')
 
@@ -83,15 +85,29 @@ export default function LondonEventsManager() {
     refetch()
   }
 
+  // Unified discovery. This used to invoke the Perplexity `discover-events`
+  // function, which wrote straight into london_events as unapproved rows. It now
+  // runs the same open-feed ingest as /admin/discovery, so there is ONE
+  // discovery backend rather than two writing to different places.
+  //
+  // Results land in `activities` for review, not in this table — hence the
+  // link through rather than a silent refetch.
   async function handleDiscover() {
     setDiscovering(true)
     setDiscoverError('')
+    setDiscoverResult('')
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('discover-events')
-      if (fnError) throw fnError
-      refetch()
+      const result = await runIngest()
+      const added = (result?.results ?? []).reduce((n, r) => n + (r.inserted ?? 0), 0)
+      const failed = (result?.results ?? []).filter((r) => r.ok === false)
+      setDiscoverResult(
+        `Found ${added} new activit${added === 1 ? 'y' : 'ies'} across ` +
+        `${result?.sources_run ?? 0} sources` +
+        (failed.length ? `, ${failed.length} source(s) failed` : '') +
+        '. Review them under Discovery.',
+      )
     } catch (err) {
-      setDiscoverError('Failed to discover events. Make sure the edge function is deployed and the OPENAI_API_KEY secret is configured in Supabase.')
+      setDiscoverError(`Discovery failed: ${err.message}`)
     } finally {
       setDiscovering(false)
     }
@@ -176,6 +192,15 @@ export default function LondonEventsManager() {
       {discoverError && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-6">
           {discoverError}
+        </div>
+      )}
+
+      {discoverResult && (
+        <div className="flex items-center gap-3 bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3 mb-6">
+          <span>{discoverResult}</span>
+          <Link to="/admin/discovery" className="ml-auto font-bold underline whitespace-nowrap">
+            Review discovered &rarr;
+          </Link>
         </div>
       )}
 

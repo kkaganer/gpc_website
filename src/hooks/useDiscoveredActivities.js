@@ -64,6 +64,18 @@ export async function unpublishActivity(id) {
   return data
 }
 
+/**
+ * Fill in missing lat/lng from other activities sharing the same postcode.
+ * The Discovery-page equivalent of What's On's "Fix Map Pins": an activity with
+ * no coordinates never appears on the map, and publish_activity() copies
+ * lat/lng straight through, so the gap propagates to london_events.
+ */
+export async function backfillCoordinates() {
+  const { data, error } = await supabase.rpc('backfill_activity_coordinates')
+  if (error) throw error
+  return Array.isArray(data) ? data[0] : data
+}
+
 /** Kick off an ingest run. Optionally limit to specific source ids. */
 export async function runIngest(sources = null) {
   const { data, error } = await supabase.functions.invoke('ingest-activities', {

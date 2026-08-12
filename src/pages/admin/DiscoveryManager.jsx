@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Check, X, Radar, Repeat, AlertTriangle, ExternalLink } from 'lucide-react'
+import { Check, X, Radar, Repeat, AlertTriangle, ExternalLink, MapPin } from 'lucide-react'
 import {
   useDiscoveredActivities,
   publishActivity,
   rejectActivity,
   runIngest,
+  backfillCoordinates,
 } from '../../hooks/useDiscoveredActivities'
 
 /**
@@ -63,6 +64,23 @@ export default function DiscoveryManager() {
     refetch()
   }
 
+  async function handleGeocode() {
+    setBusy(true)
+    setMessage('')
+    try {
+      const r = await backfillCoordinates()
+      setMessage(
+        `Fixed ${r?.fixed ?? 0} map pin${r?.fixed === 1 ? '' : 's'}. ` +
+        `${r?.still_missing ?? 0} still missing coordinates, ` +
+        `${r?.no_postcode ?? 0} have no postcode to geocode from.`,
+      )
+    } catch (err) {
+      setMessage(`Geocoding failed: ${err.message}`)
+    }
+    setBusy(false)
+    refetch()
+  }
+
   async function handleIngest() {
     setBusy(true)
     setMessage('')
@@ -103,6 +121,16 @@ export default function DiscoveryManager() {
             Auto-discovered from open feeds. Approving publishes to What&apos;s On.
           </p>
         </div>
+        <div className="flex gap-3">
+        <button
+          onClick={handleGeocode}
+          disabled={busy}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-gray-200 text-gray-600 text-sm font-bold hover:bg-gray-50 transition-colors disabled:opacity-50"
+          title="Fill in missing lat/lng from other activities at the same postcode"
+        >
+          <MapPin size={18} />
+          Fix map pins
+        </button>
         <button
           onClick={handleIngest}
           disabled={busy}
@@ -111,6 +139,7 @@ export default function DiscoveryManager() {
           <Radar size={18} />
           {busy ? 'Running...' : 'Run discovery'}
         </button>
+        </div>
       </div>
 
       {message && (

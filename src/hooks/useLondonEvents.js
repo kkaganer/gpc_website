@@ -15,7 +15,12 @@ export function useLondonEvents({ dateFrom, dateTo, category } = {}) {
       .eq('approved', true)
       .eq('is_recurring', false)
       .gte('date', today)
+      // Chronological means date AND time. Ordering by date alone left events
+      // on the same day in arbitrary order, so a 9am rhyme time could appear
+      // below an 8pm show. `time` is 'HH:MM' / 'HH:MM - HH:MM', which sorts
+      // correctly as text because the hour is zero-padded.
       .order('date', { ascending: true })
+      .order('time', { ascending: true, nullsFirst: false })
 
     if (category && category !== 'All') query = query.eq('category', category)
     if (dateFrom && dateFrom > today) query = query.gte('date', dateFrom)
