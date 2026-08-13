@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router'
-import { Plus, Pencil, Trash2, Mail, Sparkles } from 'lucide-react'
+import { Plus, Pencil, Trash2, Mail, Sparkles, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import ParsedAdvertisersReview from '../../components/admin/newsletter/ParsedAdvertisersReview'
 
 const statusColors = {
   pending: 'bg-amber-50 text-amber-600',
@@ -24,10 +25,15 @@ export default function NewsletterAdvertisersManager() {
   const [filterDate, setFilterDate] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [showEmailModal, setShowEmailModal] = useState(false)
+  const [modalStep, setModalStep] = useState('paste')
   const [emailText, setEmailText] = useState('')
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState('')
-  const [parseResult, setParseResult] = useState(null)
+  const [parseNotice, setParseNotice] = useState('')
+  const [parsedEntries, setParsedEntries] = useState([])
+  const [inserting, setInserting] = useState(false)
+  const [insertError, setInsertError] = useState('')
+  const [addedCount, setAddedCount] = useState(null)
 
   useEffect(() => {
     document.title = 'Newsletter Advertisers | GPC Admin'
@@ -51,24 +57,82 @@ export default function NewsletterAdvertisersManager() {
     fetchAdvertisers()
   }
 
+  function openEmailModal() {
+    setModalStep('paste')
+    setParseError('')
+    setParseNotice('')
+    setInsertError('')
+    setParsedEntries([])
+    setShowEmailModal(true)
+  }
+
+  function closeEmailModal() {
+    setShowEmailModal(false)
+    setModalStep('paste')
+    setEmailText('')
+    setParsedEntries([])
+    setParseError('')
+    setParseNotice('')
+    setInsertError('')
+  }
+
+  // Step 1: extract only. The edge function no longer writes anything — it hands
+  // back validated entries that the admin reviews before we insert them.
   async function handleParseEmail() {
     setParsing(true)
     setParseError('')
-    setParseResult(null)
+    setParseNotice('')
+    setInsertError('')
+    setAddedCount(null)
     try {
       const { data, error } = await supabase.functions.invoke('parse-advertiser-email', {
         body: { emailText },
       })
-      if (error) throw error
+      // supabase-js throws on any non-2xx BEFORE reading the body, so `error.message`
+      // is only ever "Edge Function returned a non-2xx status code" and every specific
+      // message the function writes ("OPENAI_API_KEY is not configured", "emailText is
+      // over the 100000 limit", ...) is discarded. The original Response hangs off
+      // error.context — read the real reason out of it before giving up.
+      if (error) {
+        let detail = ''
+        try {
+          detail = (await error.context?.clone()?.json())?.error || ''
+        } catch {
+          // Body was not JSON, or context absent — fall back to the generic message.
+        }
+        throw new Error(detail || error.message)
+      }
       if (!data?.success) throw new Error(data?.error || 'Failed to parse email')
-      setParseResult(data)
-      setEmailText('')
-      setShowEmailModal(false)
-      fetchAdvertisers()
+      const entries = data.entries || []
+      if (entries.length === 0) {
+        setParseNotice('No advertiser requests found in that email.')
+        return
+      }
+      setParsedEntries(entries)
+      setModalStep('review')
     } catch (err) {
       setParseError(err.message || 'Failed to parse email. Make sure the edge function is deployed.')
     } finally {
       setParsing(false)
+    }
+  }
+
+  // Step 2: the review component hands back only the rows the admin chose to keep,
+  // already shaped for a newsletter_advertisers insert.
+  async function handleConfirmInsert(rows) {
+    if (!rows || rows.length === 0) return
+    setInserting(true)
+    setInsertError('')
+    try {
+      const { error } = await supabase.from('newsletter_advertisers').insert(rows)
+      if (error) throw error
+      setAddedCount(rows.length)
+      closeEmailModal()
+      fetchAdvertisers()
+    } catch (err) {
+      setInsertError(err.message || 'Failed to save advertisers. Please try again.')
+    } finally {
+      setInserting(false)
     }
   }
 
@@ -98,7 +162,7 @@ export default function NewsletterAdvertisersManager() {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={() => setShowEmailModal(true)}
+            onClick={openEmailModal}
             className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-primary text-primary text-sm font-bold hover:bg-primary/5 transition-colors"
           >
             <Mail size={18} />
@@ -114,10 +178,12 @@ export default function NewsletterAdvertisersManager() {
         </div>
       </div>
 
-      {parseResult && (
+      {addedCount !== null && (
         <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-4 py-3 mb-6 flex items-center justify-between">
-          <span>Parsed {parseResult.parsed} entries, inserted {parseResult.inserted} as pending.</span>
-          <button onClick={() => setParseResult(null)} className="text-green-500 hover:text-green-700 font-bold">Dismiss</button>
+          <span>
+            Added {addedCount} advertiser {addedCount === 1 ? 'entry' : 'entries'} from the parsed email.
+          </span>
+          <button onClick={() => setAddedCount(null)} className="text-green-500 hover:text-green-700 font-bold">Dismiss</button>
         </div>
       )}
 
@@ -228,46 +294,91 @@ export default function NewsletterAdvertisersManager() {
       )}
 
       {showEmailModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => !parsing && setShowEmailModal(false)} />
-          <div className="relative bg-white rounded-2xl shadow-xl p-6 max-w-lg w-full mx-4">
-            <h3 className="font-heading font-bold text-lg text-dark">Parse Advertiser Email</h3>
-            <p className="text-gray-500 text-sm mt-1">
-              Paste an email from an advertiser and AI will extract the event details as pending entries.
-            </p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => { if (!parsing && !inserting) closeEmailModal() }}
+          />
+          <div
+            className={`relative bg-white rounded-2xl shadow-xl w-full max-h-[90vh] overflow-y-auto ${
+              modalStep === 'review' ? 'max-w-4xl' : 'max-w-lg'
+            }`}
+          >
+            <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-4 sm:px-6 py-4 flex items-start justify-between gap-4 rounded-t-2xl">
+              <div>
+                <h3 className="font-heading font-bold text-lg text-dark">
+                  {modalStep === 'review' ? 'Review Extracted Entries' : 'Parse Advertiser Email'}
+                </h3>
+                <p className="text-gray-500 text-sm mt-1">
+                  {modalStep === 'review'
+                    ? 'Check and edit each entry below. Nothing is saved until you confirm.'
+                    : 'Paste an email from an advertiser and AI will extract the event details for you to review. Nothing is saved until you confirm.'}
+                </p>
+              </div>
+              <button
+                onClick={closeEmailModal}
+                disabled={parsing || inserting}
+                className="p-1 text-gray-400 hover:text-dark rounded-lg transition-colors disabled:opacity-50"
+                title="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
 
-            {parseError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mt-4">
-                {parseError}
+            {modalStep === 'paste' && (
+              <div className="p-4 sm:p-6">
+                {parseError && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-4">
+                    {parseError}
+                  </div>
+                )}
+
+                {parseNotice && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm rounded-lg px-4 py-3 mb-4">
+                    {parseNotice}
+                  </div>
+                )}
+
+                <textarea
+                  value={emailText}
+                  onChange={(e) => setEmailText(e.target.value)}
+                  rows={10}
+                  placeholder="Paste the email content here..."
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+                  disabled={parsing}
+                />
+
+                <div className="flex gap-3 mt-4 justify-end">
+                  <button
+                    onClick={closeEmailModal}
+                    disabled={parsing}
+                    className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-dark rounded-lg border border-gray-200 hover:border-gray-300 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleParseEmail}
+                    disabled={parsing || !emailText.trim()}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-primary to-dark rounded-lg hover:scale-[1.02] transition-transform disabled:opacity-50"
+                  >
+                    <Sparkles size={16} />
+                    {parsing ? 'Parsing...' : 'Parse Email'}
+                  </button>
+                </div>
               </div>
             )}
 
-            <textarea
-              value={emailText}
-              onChange={(e) => setEmailText(e.target.value)}
-              rows={10}
-              placeholder="Paste the email content here..."
-              className="mt-4 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-              disabled={parsing}
-            />
-
-            <div className="flex gap-3 mt-4 justify-end">
-              <button
-                onClick={() => { setShowEmailModal(false); setEmailText(''); setParseError('') }}
-                disabled={parsing}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-dark rounded-lg border border-gray-200 hover:border-gray-300 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleParseEmail}
-                disabled={parsing || !emailText.trim()}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-primary to-dark rounded-lg hover:scale-[1.02] transition-transform disabled:opacity-50"
-              >
-                <Sparkles size={16} />
-                {parsing ? 'Parsing...' : 'Parse Email'}
-              </button>
-            </div>
+            {modalStep === 'review' && (
+              <div className="p-4 sm:p-6">
+                <ParsedAdvertisersReview
+                  entries={parsedEntries}
+                  onCancel={() => { setModalStep('paste'); setParsedEntries([]); setInsertError('') }}
+                  onConfirm={handleConfirmInsert}
+                  inserting={inserting}
+                  error={insertError}
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
