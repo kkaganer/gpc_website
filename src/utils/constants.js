@@ -20,6 +20,10 @@ export const CONTACT = {
   whatsappCommunityUrl: 'https://chat.whatsapp.com/PLACEHOLDER',
 };
 
+export const NEWSLETTER = {
+  hostedFormUrl: 'https://sh1.sendinblue.com/amn2zqxhtxpfe.html?t=1774565443585',
+};
+
 export const SAFEGUARDING = {
   seniorLead: { name: 'Aster Thackery', email: 'aster.thackery@gmail.com', phone: '0044 7784424572' },
   deputyLead: { name: 'Clare Macgregor', email: 'Cmacg@futurealternative.co.uk' },

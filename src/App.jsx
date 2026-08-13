@@ -28,6 +28,7 @@ const NewsletterSectionEditor = lazy(() => import('./pages/admin/NewsletterSecti
 const NewsletterAdvertisersManager = lazy(() => import('./pages/admin/NewsletterAdvertisersManager'))
 const NewsletterAdvertiserForm = lazy(() => import('./pages/admin/NewsletterAdvertiserForm'))
 const Dashboard = lazy(() => import('./pages/admin/Dashboard'))
+const SubscribersManager = lazy(() => import('./pages/admin/SubscribersManager'))
 const UsersManager = lazy(() => import('./pages/admin/UsersManager'))
 const ResetPassword = lazy(() => import('./pages/admin/ResetPassword'))
 
@@ -82,6 +83,7 @@ function App() {
             <Route path="newsletter-advertisers" element={<NewsletterAdvertisersManager />} />
             <Route path="newsletter-advertisers/new" element={<NewsletterAdvertiserForm />} />
             <Route path="newsletter-advertisers/:id/edit" element={<NewsletterAdvertiserForm />} />
+            <Route path="subscribers" element={<SubscribersManager />} />
             <Route path="users" element={<UsersManager />} />
           </Route>
         </Routes>

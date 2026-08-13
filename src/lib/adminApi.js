@@ -43,3 +43,25 @@ export async function deleteAdminUser(userId) {
   if (!res.ok) throw new Error(data.error || 'Failed to delete user')
   return data
 }
+
+// Returns the whole payload, not just the rows — the counts are what tell the
+// admin at a glance how many signups never reached Brevo.
+export async function fetchSubscribers() {
+  const res = await fetch('/api/admin/subscribers', { headers: await authHeaders() })
+  const data = await parseResponse(res)
+  if (!res.ok) throw new Error(data.error || 'Failed to fetch subscribers')
+  return data
+}
+
+// Called with an id, retries that one subscriber. Called with no argument, it
+// retries every row that is not already synced.
+export async function retryBrevoSync(id) {
+  const res = await fetch('/api/admin/subscribers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    body: JSON.stringify({ action: 'retry', ...(id ? { id } : {}) }),
+  })
+  const data = await parseResponse(res)
+  if (!res.ok) throw new Error(data.error || 'Failed to retry Brevo sync')
+  return data
+}

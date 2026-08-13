@@ -5,6 +5,7 @@ import {
   MapPin,
   Newspaper,
   Megaphone,
+  MailCheck,
   Users,
   ArrowRight,
   BookOpen,
@@ -46,6 +47,13 @@ const quickLinks = [
     color: 'bg-amber-50 text-amber-600',
   },
   {
+    to: '/admin/subscribers',
+    label: 'Subscribers',
+    description: 'List everyone who signed up to the newsletter and see whether each one reached Brevo.',
+    icon: MailCheck,
+    color: 'bg-rose-50 text-rose-600',
+  },
+  {
     to: '/admin/users',
     label: 'Users',
     description: 'Add or remove admin users who can access this portal.',
@@ -60,6 +68,7 @@ const tips = [
   "The What's On section has a Discover feature to find London events automatically.",
   'Advertiser statuses track the full pipeline: Pending, Confirmed, Included, Completed.',
   'GPC-hosted events (titles containing "GPC") get a yellow highlight in the newsletter automatically.',
+  'Signups from the inline form on the homepage are tracked in Subscribers; the Brevo-hosted form links straight out to Brevo, so those signups only ever appear in Brevo itself.',
 ]
 
 // Newsletter help — step-by-step walkthrough for the full flow from empty draft to Brevo.
