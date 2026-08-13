@@ -70,7 +70,19 @@ async function subscribe(req, res) {
   }
 
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+
+  // SERVICE ROLE ONLY — no anon-key fallback, deliberately.
+  //
+  // This endpoint needs to read the inserted row back and then UPDATE it with
+  // the Brevo outcome, and the anon key can do neither:
+  //   - RLS grants SELECT only TO authenticated, so `.insert().select()` runs
+  //     INSERT ... RETURNING against a denying SELECT policy and the insert
+  //     fails outright — every signup would 500.
+  //   - There is no UPDATE policy at all, so recording brevo_status would match
+  //     zero rows and silently do nothing.
+  // Falling back to the anon key would therefore not degrade gracefully, it
+  // would fail confusingly. Name the missing variable instead.
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   // HARD FAIL, by design. The previous version logged this and carried on to
   // return `success: true` — the subscriber was told they had signed up while
@@ -79,8 +91,8 @@ async function subscribe(req, res) {
   if (!supabaseUrl || !supabaseKey) {
     console.error(
       '[subscribe] Supabase env vars missing.',
-      'url:', !!supabaseUrl,
-      'key:', !!supabaseKey
+      'SUPABASE_URL/VITE_SUPABASE_URL:', !!supabaseUrl,
+      'SUPABASE_SERVICE_ROLE_KEY:', !!supabaseKey
     )
     return res.status(500).json({ error: 'Newsletter signup is temporarily unavailable. Please try again later.' })
   }
