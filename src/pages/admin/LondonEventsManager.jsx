@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router'
-import { Plus, Check, X, Pencil, Trash2, Sparkles, MapPin } from 'lucide-react'
+import { Plus, Check, X, Pencil, Trash2, Sparkles, MapPin, Mail } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { geocodePostcode } from '../../lib/geocode'
 import { useAllLondonEvents } from '../../hooks/useLondonEvents'
 import { runIngest, pollBatch } from '../../hooks/useDiscoveredActivities'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+
+// Index matches london_events.day_of_week (Sunday = 0), the convention
+// migration 009 and the newsletter renderer both use.
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 export default function LondonEventsManager() {
   const { events, loading, error, refetch } = useAllLondonEvents()
@@ -18,6 +22,11 @@ export default function LondonEventsManager() {
   const [discoverResult, setDiscoverResult] = useState('')
   const [backfilling, setBackfilling] = useState(false)
   const [backfillResult, setBackfillResult] = useState('')
+  const [showEmailModal, setShowEmailModal] = useState(false)
+  const [emailText, setEmailText] = useState('')
+  const [parsing, setParsing] = useState(false)
+  const [parseError, setParseError] = useState('')
+  const [parseResult, setParseResult] = useState(null)
 
   useEffect(() => {
     document.title = "What's On Manager | GPC Admin"
@@ -35,6 +44,10 @@ export default function LondonEventsManager() {
   const pending = events.filter((e) => !e.approved && isCurrent(e))
   const approved = events.filter((e) => e.approved && isCurrent(e))
   const displayed = tab === 'pending' ? pending : approved
+
+  // Rows the parser skipped were NOT inserted, so unless they are listed in the
+  // banner nobody ever learns the email mentioned them.
+  const parseSkipped = parseResult?.skipped || []
 
   function toggleSelect(id) {
     setSelected((prev) => {
@@ -159,12 +172,55 @@ export default function LondonEventsManager() {
     }
   }
 
+  // Parse an email from a local organiser straight into this table as unapproved
+  // rows, so the existing Pending tab below is the review step. Separate from
+  // Discover Events — nothing here touches `activities`.
+  async function handleParseEmail() {
+    setParsing(true)
+    setParseError('')
+    setParseResult(null)
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('parse-event-email', {
+        body: { emailText },
+      })
+      // supabase-js throws on any non-2xx BEFORE reading the body, so fnError.message
+      // is only ever the generic "non-2xx status code" and the function's own message
+      // is discarded. The real response is stashed on fnError.context — read it there.
+      if (fnError) {
+        let detail = ''
+        try {
+          detail = (await fnError.context?.clone()?.json())?.error || ''
+        } catch { /* body wasn't JSON */ }
+        throw new Error(detail || fnError.message)
+      }
+      if (!data?.success) throw new Error(data?.error || 'Failed to parse email')
+      setParseResult(data)
+      setEmailText('')
+      setShowEmailModal(false)
+      // The new rows are unapproved, so send the admin where they actually landed.
+      setTab('pending')
+      refetch()
+    } catch (err) {
+      // Leave the modal open with the pasted text intact so a retry doesn't
+      // mean re-copying the whole email.
+      setParseError(err.message || 'Failed to parse email. Make sure the edge function is deployed.')
+    } finally {
+      setParsing(false)
+    }
+  }
+
   function formatDate(dateStr) {
     return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', {
       day: 'numeric',
       month: 'short',
       year: 'numeric',
     })
+  }
+
+  // Skipped rows come back exactly as the parser read them, so the date may be
+  // missing or malformed — only format what really looks like an ISO date.
+  function formatLooseDate(dateStr) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(dateStr || '') ? formatDate(dateStr) : dateStr || ''
   }
 
   return (
@@ -191,6 +247,14 @@ export default function LondonEventsManager() {
           >
             <Sparkles size={18} />
             {discovering ? 'Discovering...' : 'Discover Events'}
+          </button>
+          <button
+            onClick={() => setShowEmailModal(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-primary text-primary text-sm font-bold hover:bg-primary/5 transition-colors"
+            title="Paste an email from an organiser and extract the event details into Pending"
+          >
+            <Mail size={18} />
+            Parse Email
           </button>
           <Link
             to="/admin/whats-on/new"
@@ -220,6 +284,58 @@ export default function LondonEventsManager() {
       {backfillResult && (
         <div className="bg-blue-50 border border-blue-200 text-blue-700 text-sm rounded-lg px-4 py-3 mb-6">
           {backfillResult}
+        </div>
+      )}
+
+      {parseResult && (
+        <div className="bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3 mb-6">
+          <div className="flex items-start gap-3">
+            <span>
+              Added {parseResult.inserted} event{parseResult.inserted === 1 ? '' : 's'} to Pending.
+              {parseSkipped.length > 0 && ` ${parseSkipped.length} skipped:`}
+            </span>
+            <button
+              onClick={() => setParseResult(null)}
+              className="ml-auto font-bold text-green-600 hover:text-green-800 whitespace-nowrap"
+            >
+              Dismiss
+            </button>
+          </div>
+
+          {parseSkipped.length > 0 && (
+            <ul className="list-disc pl-5 mt-2 space-y-1">
+              {parseSkipped.map((s, i) => (
+                <li key={i}>
+                  <span className="font-semibold">{s.title || 'Untitled event'}</span>
+                  {' — '}{s.reason}
+                  {s.date && ` (${formatLooseDate(s.date)})`}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* EVERY added event, not just the ones carrying warnings. Whether an
+              event was read as a weekly regular or a one-off is the judgement
+              most likely to be wrong, and it is the one thing the Pending table
+              does not show (its columns are Event / Date / Area / Source). A
+              summer fair misread as "every Saturday" would otherwise sit on
+              What's On for ever with nothing anywhere saying so. */}
+          {parseResult.events?.length > 0 && (
+            <ul className="list-disc pl-5 mt-2 space-y-1 text-green-700">
+              {parseResult.events.map((e, i) => (
+                <li key={i}>
+                  <span className="font-semibold">{e.title}</span>
+                  {' — '}
+                  {e.is_recurring
+                    ? `every ${DAY_NAMES[e.day_of_week] ?? 'week'}, first listed ${formatLooseDate(e.date)}`
+                    : `one-off on ${formatLooseDate(e.date)}`}
+                  {e.warnings?.length > 0 && (
+                    <span className="text-amber-700"> — {e.warnings.join('; ')}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
@@ -399,6 +515,53 @@ export default function LondonEventsManager() {
           onConfirm={bulkDelete}
           onCancel={() => setConfirmBulk(false)}
         />
+      )}
+
+      {showEmailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* Backdrop dismiss is disabled while parsing so an in-flight request isn't orphaned. */}
+          <div className="absolute inset-0 bg-black/40" onClick={() => !parsing && setShowEmailModal(false)} />
+          <div className="relative bg-white rounded-2xl shadow-xl p-6 max-w-lg w-full mx-4">
+            <h3 className="font-heading font-bold text-lg text-dark">Parse Organiser Email</h3>
+            <p className="text-gray-500 text-sm mt-1">
+              Paste an email from an organiser and the details are extracted into the Pending tab
+              for review before anything goes live.
+            </p>
+
+            {parseError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mt-4">
+                {parseError}
+              </div>
+            )}
+
+            <textarea
+              value={emailText}
+              onChange={(e) => setEmailText(e.target.value)}
+              rows={10}
+              placeholder="Paste the email content here..."
+              className="mt-4 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+              disabled={parsing}
+            />
+
+            <div className="flex gap-3 mt-4 justify-end">
+              <button
+                onClick={() => { setShowEmailModal(false); setEmailText(''); setParseError('') }}
+                disabled={parsing}
+                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-dark rounded-lg border border-gray-200 hover:border-gray-300 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleParseEmail}
+                disabled={parsing || !emailText.trim()}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-primary to-dark rounded-lg hover:scale-[1.02] transition-transform disabled:opacity-50"
+              >
+                <Sparkles size={16} />
+                {parsing ? 'Parsing...' : 'Parse Email'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
