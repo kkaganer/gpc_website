@@ -144,6 +144,58 @@ For each event give: title, venue, full UK postcode, date (YYYY-MM-DD), start ti
 a direct link to the specific event page (not a homepage), price, and the age range.
 Only include events with a real working link. Omit anything aimed at 5s and over,
 and anything you are not confident is genuinely running in this window.`.trim(),
+
+  // area_scoped_v2 — CURRENTLY LIVE. Kept character-identical to searchPrompt()
+  // in _shared/discovery/adapters/llm-discovery.ts; if you change one, change
+  // the other or this harness stops measuring what production runs.
+  //
+  // `area_scoped` above is deliberately left untouched as the BASELINE: it is
+  // what migration 016's recorded numbers were measured against, and deleting it
+  // would leave those numbers with nothing to compare to. Run both in one call
+  // to A/B them on the same window.
+  //
+  // MEASURED against `area_scoped` on one window (run_label 'ab-v1-vs-v2'):
+  //   old: 29 returned, 20 novel-valid, $0.00515/novel-valid
+  //   new: 46 returned, 23 novel-valid, $0.00460/novel-valid
+  // Better yield per pound, but lower precision (50% vs 69% of returns survive
+  // the gates), and the per-change picture is mixed:
+  //   - excluded sources as LINK DOMAINS: PARTIAL, leaks 2/29 -> 1/46
+  //   - date window restated LAST: PARTIAL, violations 2/29 -> 1/46
+  //   - one entry per GROUP: FAILED, repeated groups 3 -> 6. The model
+  //     enumerates sessions regardless of how it is asked.
+  // The adapter enforces all three in code; treat this prompt as a hint, and
+  // re-measure here before believing any future wording change.
+  area_scoped_v2: (from, to, area?: string) => `
+Find events and regular groups for children UNDER 5 and their parents/carers in
+${area ?? 'South East London'}, running between ${from} and ${to}.
+
+Search specifically within ${area ?? 'South East London'} — do not broaden to other areas.
+
+WHAT WE ALREADY HAVE — do not return anything whose link is on these domains:
+better.org.uk, any *.mylibrary.digital site, classforkids.co.uk, bookwhen.com,
+thealbany.org.uk, greenwichtheatre.org.uk, woolwich.works, blackheathhalls.com,
+unicorntheatre.com. These are already covered by our own data feeds, so a result
+from any of them is worth nothing to us no matter how good the event is.
+
+WHAT WE WANT instead is the long tail those feeds cannot reach: church and
+community-hall parent-and-toddler groups, stay-and-play sessions, independent
+baby classes, children's centres, pop-ups and parent-network meetups.
+
+ONE ENTRY PER GROUP. If something runs weekly or repeatedly, return it ONCE,
+using its FIRST date inside the window — do not list the same group again for
+each of its other dates. Two genuinely different groups at the same venue are
+two entries; the same group on Tuesday and Thursday is one.
+
+For each entry give: title, venue, full UK postcode, date (YYYY-MM-DD), start
+time, a direct link to that specific group or event page (not a site homepage),
+price, and the age range. Give the age range as the page states it, and leave it
+null if the page does not say — do not guess, we would rather know it is unknown.
+Only include entries with a real working link, and omit anything aimed at 5s and
+over or anything you are not confident is genuinely running.
+
+Finally, check every date before answering: it must fall between ${from} and
+${to} inclusive. If a group's next session is outside that window, omit the entry
+entirely — do not adjust its date to fit.`.trim(),
 }
 
 const FANOUT_AREAS = [
@@ -332,6 +384,17 @@ Deno.serve(async (req) => {
       scored.push({
         title: c.title, venue: c.venue, postcode: pc, date: c.date, url: c.url,
         borough: place?.borough ?? null,
+        // age_text, price and start_time are PERSISTED, not just scored on.
+        // Without age_text there is no way to tell a model that returned no age
+        // information from an inferAge() that failed to read it — and the under5
+        // gate is the single biggest source of rejections, so that distinction
+        // is exactly what prompt tuning needs. Cheap to store, impossible to
+        // reconstruct after the run.
+        age_text: c.age_text ?? null,
+        price: c.price ?? null,
+        start_time: c.start_time ?? null,
+        // What inferAge actually made of it, alongside the raw text it read.
+        age_months: (() => { const a = inferAge(c.title, c.age_text); return { min: a.min, max: a.max } })(),
         gates: { postcode: gPostcode, date: gDate, link: gLink, under5: gUnder5, novel: gNovel },
         verdict: allValid && gNovel ? 'NOVEL_VALID' : allValid ? 'valid_duplicate' : 'rejected',
       })

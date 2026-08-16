@@ -49,6 +49,40 @@ export const AREAS = [
   'Eltham and Mottingham, London',
 ]
 
+// Hosts already covered by the nine open feeds. A live run returned a Catford
+// Library event and a better.org.uk Family Hub drop-in despite the prompt
+// naming both as excluded — and the Better one PASSED every gate and counted as
+// a novel find, because novelty is judged against `activities` and the feeds had
+// not yet ingested that particular session.
+//
+// A negative instruction in prose is advisory; a host match is enforceable. This
+// list is the enforcement, and the prompt's version of it is only a hint that
+// saves tokens when it happens to work. Checked BEFORE stage 2, so an excluded
+// result never costs a page fetch or a verify call.
+const EXCLUDED_HOSTS = [
+  'better.org.uk',           // Better / GLL leisure centres and children's centres
+  'mylibrary.digital',       // council library event platforms (all boroughs)
+  'classforkids.co.uk',      // ClassForKids — its own adapter
+  'bookwhen.com',            // Bookwhen — its own adapter
+  'thealbany.org.uk',        // Spektrix venues, below
+  'greenwichtheatre.org.uk',
+  'woolwich.works',
+  'blackheathhalls.com',
+  'unicorntheatre.com',
+]
+
+/** Suffix match, so subdomains (lewisham.events.mylibrary.digital) are caught. */
+function isExcludedHost(url: string | undefined): boolean {
+  if (!url) return false
+  let host: string
+  try {
+    host = new URL(url).hostname.toLowerCase()
+  } catch {
+    return false // Not a parseable URL; the link gate deals with it later.
+  }
+  return EXCLUDED_HOSTS.some((h) => host === h || host.endsWith('.' + h))
+}
+
 const SEARCH_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -103,24 +137,67 @@ const VERIFY_SCHEMA = {
   },
 }
 
+// Revised after reading a live run, then A/B'd against the old prompt on the
+// same window (run_label 'ab-v1-vs-v2', 6 areas each, both at $0.10).
+//
+//   old: 29 returned, 20 novel-valid, $0.00515 per novel-valid
+//   new: 46 returned, 23 novel-valid, $0.00460 per novel-valid
+//
+// More yield for the same money, so it stays — but the per-change results are
+// worth recording honestly, because two of the three barely moved and one did
+// not work at all. THE CODE BELOW IS WHAT ACTUALLY ENFORCES THIS. The prompt is
+// a hint that sometimes saves a page fetch.
+//
+//  1. Excluded sources as LINK DOMAINS rather than brand names.
+//     PARTIAL: leaked results fell 2/29 -> 1/46. Still leaking, so EXCLUDED_HOSTS
+//     does the real work. Worth keeping only because a result the model never
+//     returns costs nothing to filter.
+//  2. Date window RESTATED LAST as a hard filter.
+//     PARTIAL: violations fell 2/29 -> 1/46. The out-of-window date gate in
+//     stage 3 remains the guarantee.
+//  3. ONE ENTRY PER GROUP rather than one per session.
+//     FAILED. Repeated groups went from 3 (16 extra rows) to 6 (20 extra rows).
+//     The model enumerates sessions no matter how it is asked. The instruction
+//     is kept because the extras-per-row RATE did improve (55% -> 43%) and it
+//     costs a few tokens, but the URL-keyed dedup below is what stops the
+//     duplicates reaching the paid verify stage.
+//
+// Also measured and worth knowing: age_text came back populated on 46/46 and
+// 29/29 entries. The model is NOT withholding age information, so under-5
+// rejections are inferAge()/isUnderFive() reading it, not the prompt failing to
+// ask. Do not try to fix that here.
 function searchPrompt(area: string, from: string, to: string): string {
   return `
-Find events for children UNDER 5 and their parents/carers in ${area}
-between ${from} and ${to}.
+Find events and regular groups for children UNDER 5 and their parents/carers in
+${area}, running between ${from} and ${to}.
 
 Search specifically within ${area} — do not broaden to other areas.
 
-We already hold complete listings from Better/GLL leisure centres, council
-libraries, the Spektrix theatres (The Albany, Greenwich Theatre, Woolwich Works,
-Blackheath Halls, Unicorn), Tower Hamlets family hubs and ClassForKids — do NOT
-return those. Prioritise church and community-hall parent-and-toddler groups,
-stay-and-play sessions, independent baby classes, children's centres, pop-ups and
-parent-network meetups.
+WHAT WE ALREADY HAVE — do not return anything whose link is on these domains:
+better.org.uk, any *.mylibrary.digital site, classforkids.co.uk, bookwhen.com,
+thealbany.org.uk, greenwichtheatre.org.uk, woolwich.works, blackheathhalls.com,
+unicorntheatre.com. These are already covered by our own data feeds, so a result
+from any of them is worth nothing to us no matter how good the event is.
 
-For each event give: title, venue, full UK postcode, date (YYYY-MM-DD), start time,
-a direct link to the specific event page (not a homepage), price, and the age range.
-Only include events with a real working link. Omit anything aimed at 5s and over,
-and anything you are not confident is genuinely running in this window.`.trim()
+WHAT WE WANT instead is the long tail those feeds cannot reach: church and
+community-hall parent-and-toddler groups, stay-and-play sessions, independent
+baby classes, children's centres, pop-ups and parent-network meetups.
+
+ONE ENTRY PER GROUP. If something runs weekly or repeatedly, return it ONCE,
+using its FIRST date inside the window — do not list the same group again for
+each of its other dates. Two genuinely different groups at the same venue are
+two entries; the same group on Tuesday and Thursday is one.
+
+For each entry give: title, venue, full UK postcode, date (YYYY-MM-DD), start
+time, a direct link to that specific group or event page (not a site homepage),
+price, and the age range. Give the age range as the page states it, and leave it
+null if the page does not say — do not guess, we would rather know it is unknown.
+Only include entries with a real working link, and omit anything aimed at 5s and
+over or anything you are not confident is genuinely running.
+
+Finally, check every date before answering: it must fall between ${from} and
+${to} inclusive. If a group's next session is outside that window, omit the entry
+entirely — do not adjust its date to fit.`.trim()
 }
 
 interface Candidate {
@@ -206,6 +283,11 @@ export const llmDiscoveryAdapter: Adapter = async (ctx: AdapterContext): Promise
 
   const stats: Record<string, number> = {
     areas: 0, returned: 0, deduped: 0,
+    // Results dropped for being on a feed we already ingest. Worth its own
+    // counter rather than folding into `deduped`: a number that stays high run
+    // after run means the prompt's exclusion list has stopped working, and that
+    // is a prompt problem, not a data problem.
+    excluded_host: 0,
     // Split so a bad run is diagnosable: an unfetchable page, a verifier that
     // rejected the claim, and a verifier call that itself failed are three very
     // different problems and were previously all counted as "unverified".
@@ -231,15 +313,42 @@ export const llmDiscoveryAdapter: Adapter = async (ctx: AdapterContext): Promise
   }
   stats.returned = raw.length
 
+  // Drop excluded hosts FIRST, before anything is paid for. The prompt asks for
+  // this too, but a live run proved the ask alone is not enough — and an excluded
+  // result is worse than useless: it can pass every gate and be counted as a
+  // novel find, because novelty is judged against `activities`, which will not
+  // hold that particular session until the owning feed next ingests it.
+  const allowed = raw.filter((c) => {
+    if (isExcludedHost(c.url)) { stats.excluded_host++; return false }
+    return true
+  })
+
   // Areas overlap at their edges, so collapse before doing any paid work.
+  //
+  // The key is URL-first and DELIBERATELY DATE-FREE. `source_uid` is
+  // `llm:<url>`, so two rows for the same page collapse into one activity at
+  // write time no matter what — but only AFTER stage 2 has fetched and verified
+  // that page once per copy. Including the date here (as this did) meant the
+  // same weekly group returned on three dates cost three page fetches and three
+  // verify calls to produce one activity. Collapsing on the identity the
+  // database will actually use keeps the paid work proportional to the output.
+  //
+  // Sort by date first so the copy we keep is the EARLIEST in the window, which
+  // is what the prompt asks the model for and the most useful next session to
+  // show. Without this the survivor was whichever the model happened to list.
+  const ordered = [...allowed].sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? '')))
   const seen = new Set<string>()
-  const candidates = raw.filter((c) => {
-    const k = `${(c.title ?? '').toLowerCase().trim()}|${(c.postcode ?? '').replace(/\s/g, '').toUpperCase()}|${c.date ?? ''}`
+  const candidates = ordered.filter((c) => {
+    const k = c.url
+      ? `u|${c.url.trim().toLowerCase()}`
+      // No URL means the link gate will drop it anyway; fall back to the old
+      // shape so an untitled/urlless pair still cannot both survive.
+      : `t|${(c.title ?? '').toLowerCase().trim()}|${(c.postcode ?? '').replace(/\s/g, '').toUpperCase()}`
     if (seen.has(k)) return false
     seen.add(k)
     return true
   })
-  stats.deduped = raw.length - candidates.length
+  stats.deduped = allowed.length - candidates.length
 
   // ---- stage 2: fetch each page, verify the batch with nano ----------------
   //
