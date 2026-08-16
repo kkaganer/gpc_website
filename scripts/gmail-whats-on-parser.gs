@@ -748,14 +748,32 @@ function testConnection() {
   console.log('Calling: ' + config.functionUrl);
   console.log('Summary emails would go to: ' + (config.reportTo || '(nowhere — set REPORT_EMAIL)'));
 
+  // WHAT THIS SAMPLE CAN AND CANNOT PROVE.
+  //
+  // It is deliberately a long-past event written in the past tense, so the model
+  // returns no events and NOTHING is ever created in Pending by a connection
+  // test. Measured against the live function: raw_count 0, inserted 0.
+  //
+  // The consequence is that this checks the URL, the key, the round trip and the
+  // response shape — and NOT extraction. Do not read "0 events" as a fault, and
+  // do not read it as proof the parser works either. Extraction is proven the
+  // first time a real email is labelled.
+  //
+  // Two earlier attempts to make it prove more both failed, and are recorded so
+  // nobody repeats them: a future-dated sample DOES extract, but then leaves a
+  // junk event in Pending for someone to find and delete; and the original
+  // subject line read "Connection test — please ignore", which the model duly
+  // obeyed — an instruction inside the email body being followed by the model
+  // reading it, which is the prompt-injection surface this route is label-gated
+  // to avoid, in miniature.
   var sample = [
     'From: Test Organiser <organiser@example.com>',
     'Date: 11 Jan 2020 09:00',
-    'Subject: Connection test — please ignore',
+    'Subject: Baby sensory taster session',
     '',
-    'Hello, we held a one-off baby sensory taster session (it does not repeat)',
+    'Hello, we ran a one-off baby sensory taster session (it does not repeat)',
     'at Mycenae House, 90 Mycenae Road, London SE3 7SE, on 11 January 2020,',
-    '10:00-11:00, £5. Please could you list it in What\'s On?'
+    '10:00-11:00, £5. Could you list it in What\'s On?'
   ].join('\n');
 
   var call = callParser_(sample, config);
@@ -766,10 +784,14 @@ function testConnection() {
     return;
   }
 
-  console.log('CONNECTION OK.');
-  console.log('The parser read ' + (call.data.raw_count || 0) + ' event(s) from the sample.');
-  console.log('Inserted: ' + call.data.inserted + ' (0 is the expected, correct answer)');
-  console.log('Skipped: ' + JSON.stringify(call.data.skipped, null, 2));
+  console.log('CONNECTION OK — the URL, the key and the round trip all work.');
+  console.log('Events read from the sample: ' + (call.data.raw_count || 0) +
+    '  (0 is expected: the sample is a 2020 event in the past tense, so there is nothing to list)');
+  console.log('Inserted: ' + call.data.inserted + '  (0 is expected — a connection test must never ' +
+    'leave anything in Pending)');
+  console.log('NOT proven by this test: whether the parser reads a real email correctly. ' +
+    'That is proven the first time you label one. Next step: apply the "' + TRIGGER_LABEL +
+    '" label to a genuine organiser email, wait ~10 minutes, and check ' + PENDING_TAB_DESCRIPTION + '.');
 
   if (call.data.inserted > 0) {
     console.warn('The sample DID create ' + call.data.inserted + ' event(s) in Pending, which was not ' +
