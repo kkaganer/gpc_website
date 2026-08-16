@@ -1,0 +1,177 @@
+-- Make a multi-day run visible for its whole run, not just its opening day.
+--
+-- WHY THIS EXISTS
+--
+-- `london_events.end_date` has existed since migration 002 (002_add_map_fields.sql:5)
+-- and is read and written by NOTHING. Grep confirms it: the email parser
+-- (supabase/functions/parse-event-email) never mentions it, the public list
+-- (src/hooks/useLondonEvents.js) filtered `.gte('date', today)`, the admin queue
+-- (src/pages/admin/LondonEventsManager.jsx) tested `e.date >= today`, and both
+-- newsletter paths (src/lib/newsletter/resolveData.ts,
+-- supabase/functions/generate-newsletter/index.ts) windowed on `date` alone.
+--
+-- So in practice an event could only be stored as a single day, and every reader
+-- asked the same question — "when did it START?" — of a three-week theatre run.
+-- The consequence is that the run disappeared from the site the morning after its
+-- first day, while it was still selling tickets.
+--
+-- MEASURED EVIDENCE, from one real labelled newsletter parsed end to end:
+-- the model read 50 events; 6 were added and 44 were skipped. About 35 of those
+-- 44 were skipped with the single reason "Date has already passed (today is
+-- 2026-08-16)". The newsletter covered 13-15 August and the model recorded those
+-- dates faithfully; the insert guard then correctly refused to create a row dated
+-- in the past, because such a row is hidden from BOTH admin tabs and from the
+-- public list and would have been invisible the moment it landed. Among the ~35
+-- were The Gruffalo at the Lyric, Cats at Regent's Park, Dinosaur World Live,
+-- Horrible Histories, Zog and Dog Man — every one of them a multi-week run that
+-- was still on, and several of them still running today.
+--
+-- Every component behaved correctly. The schema was the defect: there was no way
+-- to say "this finishes later than it starts" that any query could act on.
+--
+-- THE RULE THIS COLUMN ENABLES, applied identically at every read site:
+-- an event overlaps a window [from, to] when
+--     date                <= to      -- it starts on or before the window ends
+--     effective_end_date  >= from    -- it has not finished before the window starts
+-- Concretely `.gte('date', X)` becomes `.gte('effective_end_date', X)`; any
+-- `.lte('date', Y)` is left exactly as it is; ordering stays on `date` everywhere.
+--
+-- This migration is the schema half only. It is safe to apply on its own and
+-- changes no visible behaviour until the read sites are repointed, because for
+-- every row that exists today `effective_end_date` equals `date`.
+
+-- ---------------------------------------------------------------------------
+-- THE COLUMN
+--
+-- WHY GENERATED, AND WHY STORED. The clients talk to PostgREST, and PostgREST
+-- can only filter on columns — there is no way to express
+-- `coalesce(end_date, date) >= '2026-08-16'` in a `.gte()` from the browser, and
+-- pushing the coalesce into a view or a filter string would put it out of reach
+-- of an index anyway. The entire point of this change is that "when does it
+-- finish" is directly QUERYABLE AND INDEXABLE from the client, which requires a
+-- real column.
+--
+-- `coalesce` over two `date` columns is IMMUTABLE — it reads only stored values
+-- of an immutable-comparison type and never consults the clock, the timezone or
+-- any other row. That is precisely what makes a STORED generated column legal
+-- here; a `current_date` or timezone-converting expression would be rejected.
+-- The same precedent is already in the schema: `activities.outcode`, declared
+-- `generated always as (discovery_outcode(postcode)) stored` (008:203), and
+-- `activities.dedup_key` just above it (008:199-201).
+--
+-- NEVER NULL. `date` is `not null` (001:25), so `coalesce(end_date, date)` always
+-- resolves to a date and `.gte('effective_end_date', ...)` always bites. There is
+-- no null-handling branch for any reader to get wrong.
+-- ---------------------------------------------------------------------------
+
+alter table london_events
+  add column if not exists effective_end_date date
+  generated always as (coalesce(end_date, date)) stored;
+
+comment on column london_events.effective_end_date is
+  'The last day this event is on: coalesce(end_date, date), generated and stored. A one-off (end_date null) gets its own date, so nothing about one-offs changes; a multi-day run gets its closing date. Every "is it still on?" filter uses this column — .gte(''effective_end_date'', X) means "has not finished before X" — while .lte(''date'', Y) ("starts on or before Y") and all ordering stay on date. Read-only: it cannot be inserted or updated, set end_date instead.';
+
+-- ---------------------------------------------------------------------------
+-- THE INDEX
+--
+-- Every "is it still on?" filter in the codebase is a range scan on exactly this
+-- column, so one plain B-tree serves all of them:
+--
+--   src/hooks/useLondonEvents.js (useLondonEvents)          public What's On list
+--                                            approved = true, is_recurring = false,
+--                                            effective_end_date >= today, order by date, time
+--   src/hooks/useLondonEvents.js (useLondonEvents)       the dateFrom/dateTo window on that same list
+--   src/lib/newsletter/resolveData.ts (runEventSectionQuery)  newsletter section window (admin preview path)
+--   supabase/functions/generate-newsletter/index.ts (runEventSectionQuery)
+--                                            the same window, server side
+--
+-- NOT partial. A `where approved and not is_recurring` predicate would be smaller
+-- and all four queries above do carry both conditions — but the planner can only
+-- use a partial index when it can prove the predicate from the query, and this
+-- column is also read by paths that carry neither condition: the admin queue
+-- fetches london_events unfiltered and applies `isCurrent` in JavaScript
+-- (LondonEventsManager.jsx (isCurrent)), and ad-hoc SQL against a run's end date has no
+-- reason to mention `approved`. The table is small enough that the size saving is
+-- not worth an index that only some callers can reach.
+--
+-- NOT composite with `date`. Ordering is `order by date`, but `effective_end_date`
+-- is the leading range predicate, so a `(effective_end_date, date)` index cannot
+-- supply sorted output — the second column would only ever be dead weight.
+-- ---------------------------------------------------------------------------
+
+create index if not exists london_events_effective_end_date_idx
+  on london_events (effective_end_date);
+
+comment on index london_events_effective_end_date_idx is
+  'Serves every "not finished before X" filter: the public What''s On list and its date window (useLondonEvents.js), the newsletter section window in the admin preview (resolveData.ts) and the same window in the generate-newsletter edge function.';
+
+-- ---------------------------------------------------------------------------
+-- BACKFILL: deliberately none, and `date` and `end_date` are untouched.
+--
+-- A stored generated column is computed for every existing row as part of the
+-- ALTER, so each row already has `effective_end_date = coalesce(end_date, date)`.
+-- Today `end_date` is null everywhere it was never written, which makes
+-- `effective_end_date = date` — exactly right for a one-off, and exactly the old
+-- behaviour. Nothing to correct and nothing to invent.
+--
+-- Rows only start to differ once a writer populates `end_date`, which is a
+-- separate change to the parser and the admin form. Until then this migration is
+-- inert by construction.
+--
+-- NO CHECK CONSTRAINT on `end_date >= date`. It is tempting, but the column has
+-- been writable and unvalidated since 002, so adding the constraint could fail
+-- the migration on data nobody has looked at. A row with `end_date < date` is not
+-- corrupted by this change — it simply behaves as an event that finished before
+-- it started, i.e. hidden, which is the same thing that would happen if it were
+-- rejected. Verification query 1 below lists every such row if any exist.
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- Verification — paste into the SQL editor after running.
+--
+-- 1. Every row that actually spans more than one day. Expect ZERO rows today
+--    (nothing writes end_date yet); after the parser starts setting it, expect
+--    the runs, with effective_end_date tracking end_date. Any row here with
+--    end_date < date is bad data — see the note above.
+--
+-- select id,
+--        title,
+--        date,
+--        end_date,
+--        effective_end_date,
+--        end_date - date as span_days,
+--        is_recurring,
+--        approved
+-- from london_events
+-- where end_date is not null
+--   and end_date <> date
+-- order by date, title;
+--
+-- 2. How much this actually recovers: approved one-off rows that are still on
+--    under the new rule (finish today or later) but were hidden under the old one
+--    (started before today). Zero until end_date is populated, then one row per
+--    run currently in progress.
+--
+-- select count(*) as newly_visible
+-- from london_events
+-- where approved
+--   and not is_recurring
+--   and effective_end_date >= current_date   -- new rule: not finished yet
+--   and date               <  current_date;  -- old rule: already started, so hidden
+--
+-- 3. Confirm the column really is stored-generated and the index exists.
+--
+-- select a.attname,
+--        a.attgenerated = 's' as is_stored_generated,
+--        pg_get_expr(d.adbin, d.adrelid) as generation_expr
+-- from pg_attribute a
+-- left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+-- where a.attrelid = 'public.london_events'::regclass
+--   and a.attname  = 'effective_end_date';
+--
+-- select indexname, indexdef
+-- from pg_indexes
+-- where schemaname = 'public'
+--   and tablename  = 'london_events'
+--   and indexname  = 'london_events_effective_end_date_idx';
+-- ---------------------------------------------------------------------------

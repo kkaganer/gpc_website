@@ -215,6 +215,8 @@ export type EventData = {
   venue?: string
   description?: string
   date?: string
+  /** Last day of a run. Null/absent for a one-off — see the meta line below. */
+  end_date?: string
   time?: string
   location?: string
   area?: string
@@ -512,7 +514,17 @@ export function createRenderers(
     }
 
     const metaBits: string[] = []
-    if (ev.date) metaBits.push(formatDateShort(ev.date))
+    // A run prints its span. Newsletter sections now match anything ON during
+    // the window rather than only things STARTING in it, so a show that opened
+    // last week is legitimately included — and printing its opening date alone
+    // would read to a subscriber as an event they have already missed.
+    if (ev.date) {
+      metaBits.push(
+        ev.end_date && ev.end_date > ev.date
+          ? `${formatDateShort(ev.date)} – ${formatDateShort(ev.end_date)}`
+          : formatDateShort(ev.date),
+      )
+    }
     if (ev.time) metaBits.push(escapeHtml(ev.time))
     if (ev.age_range) metaBits.push(`Age ${escapeHtml(ev.age_range)}`)
     if (ev.location) metaBits.push(escapeHtml(ev.location))

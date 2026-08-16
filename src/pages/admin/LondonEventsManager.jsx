@@ -48,6 +48,17 @@ const KEY_SEP = '\u0000'
 // recurring class — its weekday can. Venue and postcode sit in both keys on
 // purpose: two libraries can each run "Rhyme Time" on the same morning and
 // neither is a duplicate of the other.
+//
+// `end_date` IS DELIBERATELY NOT IN THE ONE-OFF KEY — decided when runs were given
+// an end date, and left out on purpose. Two rows sharing a start but ending on
+// different days are arguably not the same event, so adding it looks like a
+// correction. It is not: this key exists to MIRROR the partial unique indexes in
+// migrations 021 and 022, and those index (norm_title, date, norm_venue,
+// norm_postcode) with no end_date (021:166-173). Add it here alone and the badge
+// stops flagging pairs the database itself still rejects with a 23505, so an admin
+// would see no warning and then watch a save fail for a duplicate nothing showed
+// them. The two sides move together or not at all: changing this key means shipping
+// a migration that rebuilds both indexes in the same breath.
 function duplicateKey(e) {
   const title = normText(e.title)
   const venue = normText(e.venue)
@@ -286,7 +297,16 @@ export default function LondonEventsManager() {
   const today = new Date().toISOString().split('T')[0]
   // Both tabs hide past one-off events to cut clutter; recurring events
   // (no single date, repeat weekly) always stay.
-  const isCurrent = (e) => e.is_recurring || !e.date || e.date >= today
+  //
+  // THE DATE TEST IS ON WHEN THE EVENT FINISHES, NOT WHEN IT STARTS. A multi-week
+  // run — a theatre production, a summer trail — is ONE row whose `date` is opening
+  // day and whose `end_date` is the last day. Testing `e.date >= today` therefore
+  // dropped it from BOTH tabs the morning after it opened: The Gruffalo at the Lyric
+  // was still running for another three weeks and had become invisible here, so
+  // nobody could approve it, edit it or even see that it existed. Coalescing to the
+  // start date keeps one-offs (end_date null) behaving exactly as before, and is the
+  // same overlap rule the public list, the newsletter window and the generator use.
+  const isCurrent = (e) => e.is_recurring || !e.date || (e.end_date || e.date) >= today
   const pending = events.filter((e) => !e.approved && isCurrent(e))
   const approved = events.filter((e) => e.approved && isCurrent(e))
   const displayed = tab === 'pending' ? pending : approved
@@ -487,6 +507,21 @@ export default function LondonEventsManager() {
     })
   }
 
+  // A run shows both ends. Without this the Date column printed opening day alone,
+  // so a three-week production and a single Saturday morning looked identical and
+  // the row read as long over. Both ends go through formatDate so the column keeps
+  // one format. `end_date` equal to `date` is a one-day run and stays a single date.
+  function formatEventDate(e) {
+    return e.end_date && e.end_date > e.date
+      ? `${formatDate(e.date)} – ${formatDate(e.end_date)}`
+      : formatDate(e.date)
+  }
+
+  // The confusing row: it started before today and has not finished, so its start
+  // date is in the past and it is still on. Say so, rather than leaving the reader
+  // to compare two dates against today's in their head.
+  const isMidRun = (e) => !e.is_recurring && e.date && e.date < today && (e.end_date || e.date) >= today
+
   // Skipped rows come back exactly as the parser read them, so the date may be
   // missing or malformed — only format what really looks like an ISO date.
   function formatLooseDate(dateStr) {
@@ -598,7 +633,13 @@ export default function LondonEventsManager() {
                   {' — '}
                   {e.is_recurring
                     ? `every ${DAY_NAMES[e.day_of_week] ?? 'week'}, first listed ${formatLooseDate(e.date)}`
-                    : `one-off on ${formatLooseDate(e.date)}`}
+                    // A run must not be announced as a one-off. This line is the
+                    // only place the recurring-vs-one-off reading is stated back
+                    // to you, so calling a three-week show "one-off on 13 Aug"
+                    // would hide exactly the misreading it exists to surface.
+                    : e.end_date && e.end_date > e.date
+                      ? `runs ${formatLooseDate(e.date)} to ${formatLooseDate(e.end_date)}`
+                      : `one-off on ${formatLooseDate(e.date)}`}
                   {e.warnings?.length > 0 && (
                     <span className="text-amber-700"> — {e.warnings.join('; ')}</span>
                   )}
@@ -768,7 +809,12 @@ export default function LondonEventsManager() {
                     </div>
                     <p className="text-gray-400 text-xs">{event.location}</p>
                   </td>
-                  <td className="px-6 py-4 text-gray-600">{formatDate(event.date)}</td>
+                  <td className="px-6 py-4 text-gray-600">
+                    {formatEventDate(event)}
+                    {isMidRun(event) && (
+                      <span className="block text-gray-400 text-xs">Running now</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 text-gray-600">{event.area || '-'}</td>
                   <td className="px-6 py-4">
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${

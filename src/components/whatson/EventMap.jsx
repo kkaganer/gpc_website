@@ -88,7 +88,12 @@ export default function EventMap({ events, activeEventId, onMarkerClick, flyTo }
                 <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 2px' }}>{event.venue}</p>
               )}
               <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 2px' }}>
-                {formatDate(event.date)} {event.time && `· ${event.time}`}
+                {event.end_date && event.end_date > event.date
+                  // A run shows its span. The list keeps an event while it is ON,
+                  // so its opening day is often already past and printing it alone
+                  // tells someone standing at the venue they have missed it.
+                  ? `${formatDate(event.date)} – ${formatDate(event.end_date)}`
+                  : formatDate(event.date)} {event.time && `· ${event.time}`}
               </p>
               <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>{event.location}</p>
               {event.is_free && (

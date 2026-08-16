@@ -34,10 +34,24 @@ export async function resolveDataForConfig(config: NewsletterConfig): Promise<Re
     const dateFrom = addDays(todayIso, filter.dateFrom ?? 0)
     const dateTo = addDays(todayIso, filter.dateTo ?? 7)
 
+    // MIRROR: runEventSectionQuery in supabase/functions/generate-newsletter/index.ts
+    // runs the identical query server-side. Change both together, or the preview and
+    // the newsletter that actually goes out will disagree.
+    //
+    // Overlap rule: an event belongs in [dateFrom, dateTo] when it starts on or before
+    // the window ends AND has not finished before the window starts. Filtering the
+    // lower bound on when an event FINISHES is what lets a multi-week run (a theatre
+    // run, a museum exhibition) appear while it is mid-run instead of only in the week
+    // it opened. effective_end_date is a generated column, coalesce(end_date, date),
+    // so a one-off with no end_date behaves exactly as before.
+    // Only london_events has end_date (migration 002); gpc_events has no end date, so
+    // it keeps filtering on `date`.
+    const notFinishedBefore = filter.source === 'london_events' ? 'effective_end_date' : 'date'
+
     let q = supabase
       .from(filter.source)
       .select('*')
-      .gte('date', dateFrom)
+      .gte(notFinishedBefore, dateFrom)
       .lte('date', dateTo)
       .order('date', { ascending: true })
 
@@ -70,6 +84,18 @@ export async function resolveDataForConfig(config: NewsletterConfig): Promise<Re
     return (data as AdvertiserData) || null
   }
 
+  // FIRST SECTION WINS. Until runs existed, "This Week" [0,7] and "Coming up"
+  // [8,21] could not both match a row: each event had one date and fell in one
+  // window. The overlap rule broke that — a show running 13-31 August is on
+  // during BOTH windows and legitimately matches both queries, so it would be
+  // printed twice in the same newsletter.
+  //
+  // Blocks are walked in render order, so claiming an id on first sight puts a
+  // run in the earliest section it belongs to and leaves it out of later ones.
+  // MIRROR: generate-newsletter/index.ts does the same thing at its own walk.
+  // Change both or the preview and the sent email disagree.
+  const claimed = new Set<string>()
+
   for (const block of config.blocks) {
     if (!block.enabled) continue
 
@@ -95,7 +121,10 @@ export async function resolveDataForConfig(config: NewsletterConfig): Promise<Re
     } else if (block.type === 'eventSection') {
       const es = block as EventSectionBlock
       if (es.mode === 'auto') {
-        resolved.autoEventsByBlockId[block.id] = await runEventSectionQuery(es)
+        const rows = await runEventSectionQuery(es)
+        const fresh = rows.filter((r) => !r.id || !claimed.has(String(r.id)))
+        for (const r of fresh) if (r.id) claimed.add(String(r.id))
+        resolved.autoEventsByBlockId[block.id] = fresh
       } else if (es.eventIds && es.eventIds.length > 0) {
         const source = es.filter?.source || 'london_events'
         const { data } = await supabase.from(source).select('*').in('id', es.eventIds)

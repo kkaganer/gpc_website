@@ -1,12 +1,25 @@
 import { Calendar, MapPin, Clock, Users, Ticket, CalendarPlus, ExternalLink } from 'lucide-react'
 import { generateGoogleCalendarUrl } from '../../utils/googleCalendar'
 
-export default function LondonEventCard({ event, isActive, onClick }) {
-  const formattedDate = new Date(event.date + 'T00:00:00').toLocaleDateString('en-GB', {
+const shortDate = (iso) =>
+  new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
   })
+
+export default function LondonEventCard({ event, isActive, onClick }) {
+  // A run shows its whole span, not its opening day. The list now keeps an event
+  // for as long as it is ON rather than dropping it the morning after it starts,
+  // so printing `date` alone would label a show you can see today with a date
+  // that has already gone — worse than the bug that change fixed.
+  const isRun = event.end_date && event.end_date > event.date
+  const formattedDate = isRun
+    ? `${shortDate(event.date)} – ${shortDate(event.end_date)}`
+    : shortDate(event.date)
+
+  // Told plainly, because "started three days ago" reads as "missed it".
+  const runningNow = isRun && event.date < new Date().toISOString().split('T')[0]
 
   const eventUrl = event.url
     ? event.url.startsWith('http') ? event.url : `https://${event.url}`
@@ -15,6 +28,9 @@ export default function LondonEventCard({ event, isActive, onClick }) {
   const calendarUrl = generateGoogleCalendarUrl({
     title: event.title,
     date: event.date,
+    // Without this, "Add to Calendar" on a run saves its OPENING day — which for
+    // anything mid-run is a date already past, so the reminder is useless.
+    endDate: isRun ? event.end_date : null,
     time: event.time,
     location: [event.venue, event.location].filter(Boolean).join(', '),
     description: event.description,
