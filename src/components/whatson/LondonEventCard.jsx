@@ -116,20 +116,33 @@ export default function LondonEventCard({ event, isActive, onClick }) {
           <CalendarPlus size={16} />
           <span>Add to Calendar</span>
         </a>
-        {eventUrl && (
+      </div>
+
+      {/* Actions.
+          Lifted out of the meta row: as an inline text link between the price
+          and the age range, "View event" read as another piece of metadata and
+          went unnoticed. It is the only way to reach the organiser's own page,
+          so it gets to look like something you press.
+          stopPropagation because the whole card is clickable — without it,
+          opening the link also selects the card underneath. */}
+      {eventUrl && (
+        <div className="mt-3">
           <a
             href={eventUrl}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="flex items-center gap-1 py-2 text-primary hover:text-primary/70 transition-colors font-bold"
-            title="View event page"
+            className="inline-flex items-center gap-1.5 rounded-full border-2 border-primary px-3 py-1.5 text-xs font-bold text-primary transition-colors hover:bg-primary hover:text-white focus:outline-none focus:ring-2 focus:ring-primary/50"
+            // Screen readers announce the destination and the new tab; sighted
+            // users get the icon. Naming the event matters in a list of cards
+            // where every link would otherwise read "View event".
+            aria-label={`View "${event.title}" on the organiser's website (opens in a new tab)`}
           >
-            <ExternalLink size={14} />
+            <ExternalLink size={13} />
             <span>View event</span>
           </a>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Location */}
       <p className="flex items-center gap-1 text-xs text-gray-400 mt-1.5">
