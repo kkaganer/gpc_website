@@ -119,6 +119,12 @@ export async function writeActivities(
       booking_url: d.booking_url ?? null,
       access: d.access ?? {},
       confidence: d.confidence ?? null,
+      // Must be mapped explicitly: this payload is a column-by-column literal,
+      // so a field an adapter sets but this list omits is silently discarded on
+      // the way to the database. That is exactly what happened when age_basis
+      // was added to the adapters and not here — the column, its index and the
+      // review UI's badges were all dead on arrival with no error anywhere.
+      age_basis: d.age_basis ?? null,
       last_verified_at: new Date().toISOString(),
     }))
 

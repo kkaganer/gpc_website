@@ -21,8 +21,23 @@ const NONE: AgeRange = { min: null, max: null, confidence: 0 }
 /** Phrases that positively mark a listing as NOT for under-5s. */
 const SCHOOL_AGE = /\b(?:ks[12]|key stage|school[- ]age|primary school|juniors?|teens?|youth|adults? only|over 1[68]s)\b/i
 
-/** e.g. "60+", "50 plus" — senior sessions, common in leisure-centre feeds. */
-const SENIOR = /\b(?:5\d|6\d|7\d|8\d)\s*(?:\+|plus)\b/
+/**
+ * e.g. "50 plus" — senior sessions, common in leisure-centre feeds.
+ *
+ * The trailing \b means this only ever fires on the WORD "plus": after a literal
+ * "+" comes a space, which gives no word boundary. That looks like a bug and is
+ * left alone deliberately — "60+ Gentle Swim" falls through to the `plus`
+ * pattern further down, which resolves it to {min: 720, max: null} and a verdict
+ * of 'exclude'. That is a STRONGER answer than this rule's NONE/'unknown', so
+ * closing the gap here would make the classification worse, not better.
+ * (Checked by running both forms against the real inferAge.)
+ *
+ * The lookbehind is the real fix: without it "Baby yoga, £55 plus mat hire"
+ * matched as a senior session. Harmless while NONE just meant "drop by another
+ * route", but hasExclusionMarker now reads this regex to decide what never
+ * reaches the LLM — so a price would have silently dropped a baby class.
+ */
+const SENIOR = /(?<![£$\d.])\b(?:5\d|6\d|7\d|8\d)\s*(?:\+|plus)\b/
 
 /**
  * Supervision clauses that LOOK like eligibility statements but aren't.
@@ -40,12 +55,35 @@ const SENIOR = /\b(?:5\d|6\d|7\d|8\d)\s*(?:\+|plus)\b/
 const SUPERVISION_AFTER =
   /^\s*(?:'?s)?\s*(?:must|should|need|have to|are required to)\b|^\s*(?:'?s)?\s*(?:must )?(?:be )?(?:attend|accompan|supervis)/i
 
+/** Under-5 words strong enough to overrule a school-age marker in the same text. */
+const UNDER5_OVERRIDE = /\b(?:under[- ]?5|pre[- ]?school|toddler|baby|babies)\b/i
+
+/**
+ * Did the text POSITIVELY rule itself out, as opposed to saying nothing?
+ *
+ * This exists because inferAge returns NONE for both — a "60+ swim" and a
+ * listing with no age field at all both come back {min: null, max: null}, so
+ * classifyUnderFive reports 'unknown' for each and cannot tell them apart. That
+ * is harmless while 'unknown' means "drop", but the moment 'unknown' means
+ * "send it to an LLM to judge", it means paying a model to second-guess a
+ * "Key Stage 2" marker the source stated plainly.
+ *
+ * Callers that route 'unknown' anywhere expensive must check this first. It is
+ * the same two regexes inferAge applies, deliberately not re-derived.
+ */
+export function hasExclusionMarker(...parts: Array<string | null | undefined>): boolean {
+  const text = parts.filter(Boolean).join(' ').toLowerCase()
+  if (!text.trim()) return false
+  if (SENIOR.test(text)) return true
+  return SCHOOL_AGE.test(text) && !UNDER5_OVERRIDE.test(text)
+}
+
 export function inferAge(...parts: Array<string | null | undefined>): AgeRange {
   const text = parts.filter(Boolean).join(' ').toLowerCase()
   if (!text.trim()) return NONE
 
   if (SENIOR.test(text)) return NONE
-  if (SCHOOL_AGE.test(text) && !/\b(?:under[- ]?5|pre[- ]?school|toddler|baby|babies)\b/.test(text)) {
+  if (SCHOOL_AGE.test(text) && !UNDER5_OVERRIDE.test(text)) {
     return { min: null, max: null, confidence: 0 }
   }
 
@@ -127,22 +165,69 @@ export function inferAge(...parts: Array<string | null | undefined>): AgeRange {
 }
 
 /**
- * Quality gate G4: does this listing plausibly serve under-5s?
- * A listing with NO age data fails unless its category is inherently under-5.
+ * The three answers the age data can actually give.
+ *
+ * 'admit'   — age data exists and it admits an under-5.
+ * 'exclude' — age data exists and it rules the listing out.
+ * 'unknown' — no age data was derivable at all.
  */
-export function isUnderFive(age: AgeRange): boolean {
-  if (age.min === null && age.max === null) return false
+export type AgeVerdict = 'admit' | 'exclude' | 'unknown'
+
+/**
+ * Quality gate G4, stated honestly: does this listing plausibly serve under-5s?
+ *
+ * The distinction that matters here is between 'exclude' and 'unknown', because
+ * they are not the same claim and were being treated as one.
+ *
+ * 'exclude' is EVIDENCE ABOUT THE AUDIENCE. The source said "16+", "Key Stage 2",
+ * "60 plus"; we know who it is for and it is not us. Dropping it is free and
+ * correct, and it is the overwhelming majority of what this gate rejects — the
+ * OpenActive and library feeds are leisure-centre timetables full of adult swim
+ * and gym sessions.
+ *
+ * 'unknown' is A GAP IN THE SOURCE. Nobody said anything about age. That is a
+ * fact about the feed's metadata, not about the children who would be welcome.
+ * Conflating the two is what was losing spektrix's theatre listings: 258 items
+ * in recent runs, every single one of them dropped for having no age field
+ * rather than for carrying a disqualifying one.
+ *
+ * 'unknown' is NOT an invitation to guess. Nothing in this file may infer an
+ * audience from silence — the header's promise holds, a null is honest and a
+ * guess is a listing a parent turns up to with the wrong-age child. The verdict
+ * only marks an item as ELIGIBLE for a judgement made elsewhere and recorded as
+ * such. Callers that do not want a judgement made must keep dropping 'unknown',
+ * which is exactly what `isUnderFive` below does.
+ */
+export function classifyUnderFive(age: AgeRange): AgeVerdict {
+  // Nothing was derivable. Says nothing either way.
+  if (age.min === null && age.max === null) return 'unknown'
+
   const min = age.min ?? 0
 
   // Must admit a child of 5 or under. This is the load-bearing half of the test:
   // it drops "12+", "16+", "18+" theatre programming outright.
-  if (min > 60) return false
+  if (min > 60) return 'exclude'
 
   // An open-ended upper bound ("4+", "All ages", "from 6 months") is a genuine
   // family listing — a 4-year-old really can attend a 4+ show.
-  if (age.max === null) return true
+  if (age.max === null) return 'admit'
 
   // A bounded range must not extend so far up that it is really a 5-12 activity
   // wearing an "all ages" label.
-  return age.max <= 96
+  return age.max <= 96 ? 'admit' : 'exclude'
+}
+
+/**
+ * Quality gate G4 as a boolean: does this listing plausibly serve under-5s?
+ * A listing with NO age data fails unless its category is inherently under-5.
+ *
+ * Delegates to `classifyUnderFive` rather than repeating its thresholds. Seven
+ * adapters call this and only two are being moved onto the three-way verdict, so
+ * the two forms have to stay in lockstep indefinitely — sharing one implementation
+ * is the only way they can never drift.
+ */
+export function isUnderFive(age: AgeRange): boolean {
+  // 'unknown' collapses back into false here, preserving today's behaviour
+  // exactly for every caller that has not opted into judging the gaps.
+  return classifyUnderFive(age) === 'admit'
 }

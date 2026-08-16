@@ -70,6 +70,16 @@ export interface ActivityDraft {
   deep_link?: string | null
   confidence?: number | null
 
+  /**
+   * How the age range was arrived at. Four very different grades of evidence
+   * write to age_min_months/age_max_months — an explicit "6-18 months" on the
+   * source, a category word like "toddler", a venue-level assumption, and an
+   * LLM judgement on a listing that stated no age at all — and without this
+   * they are indistinguishable in the table and in review.
+   * Values must match migration 023's CHECK constraint.
+   */
+  age_basis?: 'stated' | 'inferred' | 'venue_default' | 'llm_judged' | null
+
   /** Directly-ingested dated instances (one-offs, or feeds that publish them). */
   occurrences?: OccurrenceDraft[]
 }
