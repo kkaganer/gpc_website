@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 /**
@@ -13,9 +13,21 @@ export function useDiscoveredActivities(status = 'pending') {
   const [activities, setActivities] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // Read inside fetchActivities to decide whether this is a first load, without
+  // putting `activities` in its dependency list — that would rebuild the
+  // callback on every fetch and re-fire the effect below in a loop.
+  const activitiesRef = useRef([])
 
-  const fetchActivities = useCallback(async () => {
-    setLoading(true)
+  // `loading` drives a FULL-PAGE SPINNER that replaces the table. Setting it on
+  // every call meant approving a single row blanked the entire queue and rebuilt
+  // it — scroll position gone, open groups shut, back to the top of the list,
+  // after every action. Reviewing fifty items became fifty trips back to the top.
+  //
+  // So it is set only when there is nothing on screen yet, i.e. the first load.
+  // A refetch after an action swaps the rows underneath a table that never
+  // unmounts, which is what keeps your place.
+  const fetchActivities = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading((prev) => prev || activitiesRef.current.length === 0)
     let query = supabase
       .from('activity_review_queue')
       .select('*')
@@ -30,8 +42,11 @@ export function useDiscoveredActivities(status = 'pending') {
     if (fetchError) {
       setError(fetchError.message)
       setActivities([])
+      activitiesRef.current = []
     } else {
+      setError(null)
       setActivities(data || [])
+      activitiesRef.current = data || []
     }
     setLoading(false)
   }, [status])

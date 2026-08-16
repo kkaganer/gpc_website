@@ -606,12 +606,31 @@ export default function DiscoveryManager() {
     setMessage('')
     try {
       const { batch_id: batchId, sources_queued: queued } = await runIngest()
+      const startedAt = Date.now()
       setMessage(`Discovery started — 0/${queued} sources done...`)
 
+      // WHY THIS SHOWS MORE THAN "n of m done".
+      //
+      // `inserted` is sum(ingest_runs.inserted), and a run row is only written
+      // when its source FINISHES. So across ten sources — some of which scan
+      // hundreds of events, and one of which runs web searches — both the done
+      // count and the inserted count are genuinely frozen for a minute or more.
+      // The old message showed only those two numbers, so a working run looked
+      // hung, which is what it was reported as.
+      //
+      // sources_started moves the moment a source begins, and elapsed seconds
+      // move every poll, so between them the line is always visibly alive. The
+      // view has carried both all along; nothing was reading them.
       const final = await pollBatch(batchId, (s) => {
+        const secs = Math.round((Date.now() - startedAt) / 1000)
+        const inFlight = Math.max((s.sources_started ?? 0) - (s.sources_finished ?? 0), 0)
+        const found = s.inserted
+          ? `${s.inserted} new activit${s.inserted === 1 ? 'y' : 'ies'} so far`
+          : 'nothing new yet'
         setMessage(
-          `Discovery running — ${s.sources_finished}/${s.total_sources} sources done, ` +
-          `${s.inserted} new activit${s.inserted === 1 ? 'y' : 'ies'} so far...`,
+          `Discovery running (${secs}s) — ${s.sources_finished}/${s.total_sources} sources done` +
+          (inFlight ? `, ${inFlight} still working` : '') +
+          `, ${found}...`,
         )
       })
 

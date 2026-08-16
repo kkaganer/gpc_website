@@ -401,12 +401,22 @@ export default function LondonEventsManager() {
     setDiscoverResult('')
     try {
       const { batch_id: batchId, sources_queued: queued } = await runIngest()
+      const startedAt = Date.now()
       setDiscoverResult(`Discovery started — 0/${queued} sources done...`)
 
+      // Same progress line as the Discovery screen, and for the same reason:
+      // `inserted` only moves when a source FINISHES, so across ten sources the
+      // old two-number message sat unchanged for a minute and read as hung.
+      // sources_started and the elapsed clock always move. Keep the two screens
+      // in step — this is the twin of handleIngest in DiscoveryManager.jsx.
       const final = await pollBatch(batchId, (s) => {
+        const secs = Math.round((Date.now() - startedAt) / 1000)
+        const inFlight = Math.max((s.sources_started ?? 0) - (s.sources_finished ?? 0), 0)
+        const found = s.inserted ? `${s.inserted} new so far` : 'nothing new yet'
         setDiscoverResult(
-          `Discovery running — ${s.sources_finished}/${s.total_sources} sources done, ` +
-          `${s.inserted} new so far...`,
+          `Discovery running (${secs}s) — ${s.sources_finished}/${s.total_sources} sources done` +
+          (inFlight ? `, ${inFlight} still working` : '') +
+          `, ${found}...`,
         )
       })
 
