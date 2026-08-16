@@ -249,8 +249,21 @@ function toBool(value: unknown, price: string | null): boolean {
 // legitimately run "Rhyme Time" on a Tuesday morning, and a guard that rejected
 // the second would be worse than no guard.
 //
-// SCOPE is rows with `activity_id is null` — manual, public-form and email rows.
-// Discovery-published rows are `publish_activity`'s business and are left alone.
+// SCOPE is EVERY row in `london_events`, whatever its `activity_id` — manual,
+// public-form and email rows AND rows discovery published from a feed. That is
+// deliberately WIDER than migration 021's unique indexes, which are partial on
+// `activity_id is null` and must STAY that way: a unique constraint spanning
+// discovery rows could make `publish_activity()` fail mid-ingest when two feeds
+// legitimately describe one class, which is a worse outage than a duplicate
+// listing. The consequence is that the likeliest real duplicate of all — a class
+// a feed already publishes (activity_id NOT NULL) that the organiser then also
+// emails in (activity_id NULL) — is invisible to those indexes, and to every
+// other write path. THIS CHECK IS THE ONLY THING THAT CATCHES IT AT WRITE TIME:
+// load-bearing, not belt-and-braces.
+//
+// The two cases are reported differently, because what the admin should DO
+// differs. A feed listing is re-created by the next ingest run if deleted, so it
+// has to be edited in place rather than replaced by the emailed copy.
 // ---------------------------------------------------------------------------
 
 /** Field separator that cannot occur in a title, venue or postcode. */
@@ -295,9 +308,22 @@ function describeExisting(row: any): string {
   return `"${row.title}"${where ? ` at ${where}` : ''} ${when}`
 }
 
-/** A parsed event that the table already holds. Names the tab it is sitting on. */
+/**
+ * A parsed event that the table already holds. Two cases, two different actions:
+ *
+ *  - `activity_id` NULL — a manual, public-form or email row. Name the tab it is
+ *    sitting on so the admin can go and find it.
+ *  - `activity_id` NOT NULL — discovery published it from a feed. Deleting that
+ *    row does NOT stick: `publish_activity` re-creates it from
+ *    `activities`/`occurrences` on the next ingest run, so an admin who deletes
+ *    it to make room for the organiser's email watches it come straight back and
+ *    still has the duplicate. Say so, and point them at editing it instead.
+ */
 function alreadyListedReason(existing: any): string {
   const status = existing.approved ? 'Approved' : 'Pending'
+  if (existing.activity_id) {
+    return `Already listed — this is already in What's On from an automatic feed (${status}): ${describeExisting(existing)}. It was not added again. If the organiser's email has better detail, edit that listing rather than adding a second copy — a feed listing is re-created automatically if deleted.`
+  }
   return `Already listed — an event with this ${keyParts(existing.is_recurring)} is already in What's On (${status}): ${describeExisting(existing)}. It was not added again.`
 }
 
@@ -633,8 +659,13 @@ Deno.serve(async (req) => {
     //     cannot miss a real match. Everything else in the key (title, venue,
     //     postcode) is normalised text that Postgres would not compare the way
     //     `duplicateKey` does, so it is settled here rather than in the query.
-    //     Only `activity_id is null` rows are considered: discovery-published
-    //     rows are out of scope by design.
+    //     There is deliberately NO `activity_id` filter. A row discovery
+    //     published from a feed is just as much a duplicate of an emailed event
+    //     as a manual one is — more likely, in fact, since organisers email in
+    //     the very classes the feeds carry. Migration 021's unique indexes are
+    //     partial on `activity_id is null` and CANNOT see that pairing, so this
+    //     query is the only thing catching it before the row lands. Selecting
+    //     `activity_id` lets the reason say which source the match came from.
     const kept: Candidate[] = []
     const oneOffDates = [...new Set(
       fresh.filter((c) => !c.row.is_recurring).map((c) => String(c.row.date)),
@@ -651,15 +682,16 @@ Deno.serve(async (req) => {
     } else {
       const { data: existingRows, error: existingError } = await supabase
         .from('london_events')
-        .select('title, date, venue, postcode, is_recurring, day_of_week, approved')
-        .is('activity_id', null)
+        .select('title, date, venue, postcode, is_recurring, day_of_week, approved, activity_id')
         .or(orParts.join(','))
 
       if (existingError) {
-        // A failed CHECK must not lose the parse — the unique indexes from
-        // migration 021 still stand behind the insert below, and a 23505 there
-        // is handled as an "already listed" skip. Say so rather than pretending
-        // the email was checked.
+        // A failed CHECK must not lose the parse — for a duplicate of another
+        // `activity_id is null` row the unique indexes from migration 021 still
+        // stand behind the insert below, and a 23505 there is handled as an
+        // "already listed" skip. They do NOT cover a duplicate of a
+        // discovery-published row, so that one now goes entirely unguarded: all
+        // the more reason to say so rather than pretend the email was checked.
         for (const candidate of fresh) {
           candidate.warnings.push(
             `could not check What's On for an existing copy (${existingError.message}) — worth a look at the Pending and Approved tabs`,
@@ -670,8 +702,13 @@ Deno.serve(async (req) => {
         const existingByKey = new Map<string, any>()
         for (const row of existingRows || []) {
           const key = duplicateKey(row)
-          // First wins: the admin only needs ONE row named to go and find it.
-          if (!existingByKey.has(key)) existingByKey.set(key, row)
+          // The admin only needs ONE row named to go and find it, so first wins
+          // — EXCEPT that a discovery row displaces an already-stored manual one.
+          // If What's On somehow holds both, the feed row is the one that cannot
+          // be deleted (`publish_activity` re-creates it), so it is the one the
+          // admin has to be told about and the one the reason must describe.
+          const held = existingByKey.get(key)
+          if (!held || (!held.activity_id && row.activity_id)) existingByKey.set(key, row)
         }
         for (const candidate of fresh) {
           const match = existingByKey.get(duplicateKey(candidate.row))

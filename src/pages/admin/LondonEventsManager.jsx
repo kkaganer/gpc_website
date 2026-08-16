@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router'
-import { Plus, Check, X, Pencil, Trash2, Sparkles, MapPin, Mail, AlertTriangle, CopyCheck } from 'lucide-react'
+import { Plus, Check, X, Pencil, Trash2, Sparkles, MapPin, Mail, AlertTriangle, CopyCheck, Info } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { geocodePostcode } from '../../lib/geocode'
 import { useAllLondonEvents } from '../../hooks/useLondonEvents'
@@ -18,13 +18,20 @@ const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frid
 // Nothing in the product de-duplicates on read: useLondonEvents, WhatsOn, the map
 // and the newsletter renderer each turn one row into one card, one pin and one
 // bullet. So an unnoticed duplicate is not a tidiness problem, it is a second
-// public listing. Rows arriving by the public submit form, manual entry or the
-// email parser have no activity_id, which is exactly the set the old
-// london_events_activity_date_uidx never constrained.
+// public listing.
 //
-// Rows WITH an activity_id are published by discovery and deliberately excluded:
-// two feeds may legitimately describe the same class, and flagging those would
-// only add noise to a path that already has its own review step.
+// DETECTION SPANS EVERY ROW, activity_id or not. The likeliest real duplicate is
+// precisely the one that crosses the boundary: a class discovery ingests from a
+// feed (Bookwhen, ClassForKids, OpenActive, a library timetable — published into
+// london_events WITH an activity_id by publish_activity) that the organiser ALSO
+// emails in, landing a second row with activity_id NULL. Grouping only the NULL
+// rows made each of those look like a singleton and flagged nothing.
+//
+// Detection is not the unique indexes. The hard constraints in migration 021 stay
+// narrow on purpose — a unique index spanning discovery rows could make
+// publish_activity() fail mid-ingest when two feeds legitimately describe one
+// class, which is worse than a duplicate listing. Showing a badge carries none of
+// that risk, so the two scopes differ deliberately.
 // ---------------------------------------------------------------------------
 
 // lower(trim(x)) with '' for null — mirrors norm_title / norm_venue in the SQL.
@@ -42,7 +49,6 @@ const KEY_SEP = '\u0000'
 // purpose: two libraries can each run "Rhyme Time" on the same morning and
 // neither is a duplicate of the other.
 function duplicateKey(e) {
-  if (e.activity_id) return null
   const title = normText(e.title)
   const venue = normText(e.venue)
   const postcode = normPostcode(e.postcode)
@@ -80,10 +86,25 @@ const isPopulated = (value) => {
 }
 const completeness = (e) => COMPLETENESS_FIELDS.filter((f) => isPopulated(e[f])).length
 
-// Keep rule, in the same order the SQL cleanup uses: prefer approved (it may
+// A row published by discovery — anything with an activity_id.
+const isFeedRow = (e) => !!e.activity_id
+
+// Keep rule. THE RESURRECTION RULE COMES FIRST, ahead of approved:
+//
+// publish_activity() re-publishes from activities/occurrences on every ingest run
+// with `on conflict (activity_id, date) do update`, so deleting a feed-published
+// row DOES NOT STICK — the next run puts it straight back. Keeping the manual copy
+// and dropping the feed copy would therefore delete something that resurrects,
+// leave the duplicate in place, and churn for ever. So in any group mixing the two,
+// the feed row is the keeper no matter how approved, rich or old the manual one is.
+//
+// After that, the original order the SQL cleanup uses: prefer approved (it may
 // already be live and linked), then the most complete row, then the oldest.
 // Sorts the keeper to index 0; the id compare only makes ties deterministic.
 function keeperFirst(a, b) {
+  const aFeed = isFeedRow(a)
+  const bFeed = isFeedRow(b)
+  if (aFeed !== bFeed) return aFeed ? -1 : 1
   if (!!a.approved !== !!b.approved) return a.approved ? -1 : 1
   const byCompleteness = completeness(b) - completeness(a)
   if (byCompleteness !== 0) return byCompleteness
@@ -100,14 +121,33 @@ function keeperFirst(a, b) {
   return String(a.id).localeCompare(String(b.id))
 }
 
-// Returns: flagged  id -> { size, keep } for every row in a group of 2+
-//          extras   ids of the rows a group would drop (everything but the keeper)
-//          groups   how many distinct keys collided
+// Group kinds, because what the admin should DO differs completely:
+//   'manual' — every row has activity_id NULL. The classic case: pick a keeper,
+//              delete the rest, and it stays deleted.
+//   'mixed'  — a feed row and at least one manual/emailed copy of it. The feed row
+//              is the keeper (see keeperFirst) and the manual copies are the ones
+//              to remove.
+//   'feed'   — feed rows only. NOT actionable here: publish_activity owns these,
+//              two feeds may legitimately describe one class, and a delete just
+//              comes back on the next ingest. Report, never offer.
+function groupKind(group) {
+  const feed = group.filter(isFeedRow).length
+  if (feed === 0) return 'manual'
+  if (feed === group.length) return 'feed'
+  return 'mixed'
+}
+
+// Returns: flagged     id -> { size, keep, kind, feed } for every row in a group of 2+
+//          extras      ids of the rows a group would drop — keeper and ALL feed rows
+//                      excluded, because this set feeds a bulk DELETE
+//          actionable  groups with something a delete can actually fix ('manual' + 'mixed')
+//          feedOnly    'feed' groups — informational only, nothing to remove
+// The two counts are disjoint and cover every colliding key, so actionable + feedOnly
+// is the total number of duplicate groups.
 function findDuplicates(rows) {
   const byKey = new Map()
   for (const e of rows) {
     const key = duplicateKey(e)
-    if (!key) continue
     const group = byKey.get(key)
     if (group) group.push(e)
     else byKey.set(key, [e])
@@ -115,19 +155,106 @@ function findDuplicates(rows) {
 
   const flagged = new Map()
   const extras = new Set()
-  let groups = 0
+  let actionable = 0
+  let feedOnly = 0
 
   for (const group of byKey.values()) {
     if (group.length < 2) continue
-    groups++
+    const kind = groupKind(group)
+    if (kind === 'feed') feedOnly++
+    else actionable++
     const ranked = [...group].sort(keeperFirst)
     ranked.forEach((e, i) => {
-      flagged.set(e.id, { size: group.length, keep: i === 0 })
-      if (i > 0) extras.add(e.id)
+      const feed = isFeedRow(e)
+      flagged.set(e.id, { size: group.length, keep: i === 0, kind, feed })
+      // Never offer a feed row up. keeperFirst already sorts feed rows first, but a
+      // group of TWO feed rows would otherwise hand over the second one, and that
+      // delete resurrects on the next ingest run.
+      if (i > 0 && !feed) extras.add(e.id)
     })
   }
 
-  return { flagged, extras, groups }
+  return { flagged, extras, actionable, feedOnly }
+}
+
+const BADGE_BASE = 'flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold border'
+// Amber = you have something to remove. Blue = for information only.
+const BADGE_WARN = `${BADGE_BASE} text-amber-800 bg-amber-50 border-amber-200`
+const BADGE_INFO = `${BADGE_BASE} text-blue-800 bg-blue-50 border-blue-200`
+
+// One pill per row, worded for what the admin should actually do with THAT row.
+// Every variant carries its own words, so it still reads without colour.
+function DuplicateBadge({ info, isRecurring }) {
+  const shared =
+    `${info.size} rows share this title, venue, postcode and ` +
+    `${isRecurring ? 'weekday' : 'date'}, across Pending and Approved. `
+
+  // Feed rows only — publish_activity's business, not the admin's. Two feeds
+  // describing one class is legitimate, and a delete here resurrects on the next
+  // ingest, so this is reported and never offered up.
+  if (info.kind === 'feed') {
+    return (
+      <span
+        className={BADGE_INFO}
+        title={
+          shared +
+          'All of them are published from a discovery feed. Nothing to remove here: they are ' +
+          're-created from the activities table on every ingest run, so deleting one only brings ' +
+          'it back. If they are genuinely the same class, fix it at the source under Discovery.'
+        }
+      >
+        <Info size={11} />
+        Duplicated in a feed ({info.size} rows) — nothing to do here
+      </span>
+    )
+  }
+
+  // A feed row and a manual/emailed copy of it. The feed row is the keeper.
+  if (info.kind === 'mixed') {
+    return info.feed ? (
+      <span
+        className={BADGE_INFO}
+        title={
+          shared +
+          'This is the feed-published copy, and the one kept: publish_activity re-creates it from ' +
+          'the activities table on every ingest run, so deleting it would only bring it straight ' +
+          'back. Remove the manually added or emailed copy instead.'
+        }
+      >
+        <Info size={11} />
+        Feed listing — kept ({info.size} rows)
+      </span>
+    ) : (
+      <span
+        className={BADGE_WARN}
+        title={
+          shared +
+          'One of them arrives from a discovery feed, and that copy is the one kept, because ' +
+          'publish_activity re-creates it on every ingest run and deleting it achieves nothing. ' +
+          'This manually added or emailed copy is the one to remove.'
+        }
+      >
+        <AlertTriangle size={11} />
+        Also in a feed — remove this copy
+      </span>
+    )
+  }
+
+  // Manual rows only: the original case, and the only one where a delete sticks.
+  return (
+    <span
+      className={BADGE_WARN}
+      title={
+        shared +
+        (info.keep
+          ? 'This is the copy "Select duplicates" would keep.'
+          : 'This is one of the extras "Select duplicates" would tick.')
+      }
+    >
+      <AlertTriangle size={11} />
+      Possible duplicate ({info.size} rows)
+    </span>
+  )
 }
 
 export default function LondonEventsManager() {
@@ -175,7 +302,12 @@ export default function LondonEventsManager() {
   // put something the admin cannot see into a delete. The KEEPER is still chosen
   // across both tabs, which is what makes a pending copy of an approved event the
   // one offered up rather than the live row.
-  const duplicateExtras = displayed.filter((e) => duplicates.extras.has(e.id))
+  //
+  // The `!isFeedRow` guard restates what findDuplicates already enforces, and stays
+  // because this list is the input to a one-click bulk DELETE: a feed row deleted
+  // here is re-created by publish_activity on the next ingest, so the button would
+  // do nothing except churn the table and leave the duplicate standing.
+  const duplicateExtras = displayed.filter((e) => duplicates.extras.has(e.id) && !isFeedRow(e))
 
   // Ticks the boxes and nothing else — the admin still hits Reject/Delete and
   // confirms the existing modal, so nothing is destroyed without a click.
@@ -498,38 +630,55 @@ export default function LondonEventsManager() {
           </button>
         </div>
 
-        {/* Quiet when there are none: the whole block disappears at zero. */}
-        {duplicates.flagged.size > 0 && (
-          <>
-            <span
-              className="flex items-center gap-1.5 text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5 text-xs font-bold"
-              title={
-                `${duplicates.flagged.size} rows fall into ${duplicates.groups} group` +
-                `${duplicates.groups === 1 ? '' : 's'} sharing a title, venue, postcode and ` +
-                'date (or weekday, for weekly events), counting Pending and Approved together. ' +
-                'Nothing removes duplicates when the site reads these rows, so every extra one ' +
-                'becomes a second card, a second map pin and a second newsletter bullet.'
-              }
-            >
-              <AlertTriangle size={14} />
-              {duplicates.flagged.size} possible duplicate{duplicates.flagged.size === 1 ? '' : 's'}
-            </span>
+        {/* Two counts, each a plain number of GROUPS, kept apart because only one of
+            them is something the admin can act on. Quiet at zero either way. */}
+        {duplicates.actionable > 0 && (
+          <span
+            className="flex items-center gap-1.5 text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5 text-xs font-bold"
+            title={
+              `${duplicates.actionable} group${duplicates.actionable === 1 ? '' : 's'} of rows share a ` +
+              'title, venue, postcode and date (or weekday, for weekly events), counting Pending ' +
+              'and Approved together, and have a copy worth removing. Nothing removes duplicates ' +
+              'when the site reads these rows, so every extra one becomes a second card, a second ' +
+              'map pin and a second newsletter bullet.'
+            }
+          >
+            <AlertTriangle size={14} />
+            {duplicates.actionable} duplicate group{duplicates.actionable === 1 ? '' : 's'} to fix
+          </span>
+        )}
 
-            {duplicateExtras.length > 0 && (
-              <button
-                onClick={selectDuplicates}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full border-2 border-amber-200 text-amber-800 text-xs font-bold hover:bg-amber-50 transition-colors"
-                title={
-                  `Tick the ${duplicateExtras.length} extra row${duplicateExtras.length === 1 ? '' : 's'} ` +
-                  'on this tab, leaving the copy worth keeping (approved first, then the most ' +
-                  'complete, then the oldest) unticked. Nothing is removed until you confirm.'
-                }
-              >
-                <CopyCheck size={14} />
-                Select duplicates ({duplicateExtras.length})
-              </button>
-            )}
-          </>
+        {duplicates.feedOnly > 0 && (
+          <span
+            className="flex items-center gap-1.5 text-blue-800 bg-blue-50 border border-blue-200 rounded-full px-3 py-1.5 text-xs font-bold"
+            title={
+              `${duplicates.feedOnly} group${duplicates.feedOnly === 1 ? '' : 's'} contain ` +
+              'feed-published rows only — usually two feeds describing the same class, which is ' +
+              'legitimate. Nothing to do here: those rows are re-created from the activities table ' +
+              'on every ingest run, so deleting one only brings it back. Fix it at the source ' +
+              'under Discovery.'
+            }
+          >
+            <Info size={14} />
+            {duplicates.feedOnly} feed-only group{duplicates.feedOnly === 1 ? '' : 's'} (nothing to remove)
+          </span>
+        )}
+
+        {duplicateExtras.length > 0 && (
+          <button
+            onClick={selectDuplicates}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full border-2 border-amber-200 text-amber-800 text-xs font-bold hover:bg-amber-50 transition-colors"
+            title={
+              `Tick the ${duplicateExtras.length} extra row${duplicateExtras.length === 1 ? '' : 's'} ` +
+              'on this tab, leaving the copy worth keeping unticked: a feed-published copy always ' +
+              'wins, otherwise approved first, then the most complete, then the oldest. ' +
+              'Feed-published rows are never ticked — discovery re-creates them on the next ingest. ' +
+              'Nothing is removed until you confirm.'
+            }
+          >
+            <CopyCheck size={14} />
+            Select duplicates ({duplicateExtras.length})
+          </button>
         )}
       </div>
 
@@ -610,22 +759,11 @@ export default function LondonEventsManager() {
                   <td className="px-6 py-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-semibold text-dark">{event.title}</p>
-                      {/* The pill carries its own words, so it still reads without colour. */}
                       {duplicates.flagged.has(event.id) && (
-                        <span
-                          className="flex items-center gap-1 text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 text-[11px] font-bold"
-                          title={
-                            `${duplicates.flagged.get(event.id).size} rows share this title, venue, ` +
-                            `postcode and ${event.is_recurring ? 'weekday' : 'date'}, across Pending ` +
-                            'and Approved. ' +
-                            (duplicates.flagged.get(event.id).keep
-                              ? 'This is the copy "Select duplicates" would keep.'
-                              : 'This is one of the extras "Select duplicates" would tick.')
-                          }
-                        >
-                          <AlertTriangle size={11} />
-                          Possible duplicate ({duplicates.flagged.get(event.id).size} rows)
-                        </span>
+                        <DuplicateBadge
+                          info={duplicates.flagged.get(event.id)}
+                          isRecurring={event.is_recurring}
+                        />
                       )}
                     </div>
                     <p className="text-gray-400 text-xs">{event.location}</p>
