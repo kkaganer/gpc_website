@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router'
-import { Plus, Check, X, Pencil, Trash2, Sparkles, MapPin, Mail } from 'lucide-react'
+import { Plus, Check, X, Pencil, Trash2, Sparkles, MapPin, Mail, AlertTriangle, CopyCheck } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { geocodePostcode } from '../../lib/geocode'
 import { useAllLondonEvents } from '../../hooks/useLondonEvents'
@@ -10,6 +10,125 @@ import ConfirmModal from '../../components/ui/ConfirmModal'
 // Index matches london_events.day_of_week (Sunday = 0), the convention
 // migration 009 and the newsletter renderer both use.
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+// ---------------------------------------------------------------------------
+// Possible-duplicate detection — computed here from the rows already loaded.
+// No extra query, no new endpoint.
+//
+// Nothing in the product de-duplicates on read: useLondonEvents, WhatsOn, the map
+// and the newsletter renderer each turn one row into one card, one pin and one
+// bullet. So an unnoticed duplicate is not a tidiness problem, it is a second
+// public listing. Rows arriving by the public submit form, manual entry or the
+// email parser have no activity_id, which is exactly the set the old
+// london_events_activity_date_uidx never constrained.
+//
+// Rows WITH an activity_id are published by discovery and deliberately excluded:
+// two feeds may legitimately describe the same class, and flagging those would
+// only add noise to a path that already has its own review step.
+// ---------------------------------------------------------------------------
+
+// lower(trim(x)) with '' for null — mirrors norm_title / norm_venue in the SQL.
+const normText = (v) => (v ?? '').toString().trim().toLowerCase()
+
+// upper(replace(trim(x), ' ', '')) with '' for null — mirrors norm_postcode.
+const normPostcode = (v) => (v ?? '').toString().trim().toUpperCase().replace(/ /g, '')
+
+// NUL joins the parts, so no title or venue text can forge a key boundary.
+const KEY_SEP = '\u0000'
+
+// TWO keys, matching the two partial unique indexes. A recurring row's `date` is
+// only its next occurrence and drifts week to week, so date cannot identify a
+// recurring class — its weekday can. Venue and postcode sit in both keys on
+// purpose: two libraries can each run "Rhyme Time" on the same morning and
+// neither is a duplicate of the other.
+function duplicateKey(e) {
+  if (e.activity_id) return null
+  const title = normText(e.title)
+  const venue = normText(e.venue)
+  const postcode = normPostcode(e.postcode)
+  return e.is_recurring
+    // (norm_title, coalesce(day_of_week, -1), norm_venue, norm_postcode)
+    ? ['recurring', title, e.day_of_week ?? -1, venue, postcode].join(KEY_SEP)
+    // (norm_title, date, norm_venue, norm_postcode)
+    : ['one-off', title, e.date ?? '', venue, postcode].join(KEY_SEP)
+}
+
+// "Most complete" = how many informative columns are actually filled in. A row
+// carrying a description, a link and coordinates is worth more to a reader than
+// a bare title, whichever arrived first.
+//
+// THIS LIST MUST MATCH london_event_richness() IN MIGRATION 020 EXACTLY.
+// The two rank the same rows, and this button ticks boxes that feed the bulk
+// DELETE — so if the SQL cleanup and this button disagreed about which row is
+// richest, "Select duplicates" could tick the row holding the description,
+// booking link and image while keeping a near-empty one. Note the omissions:
+// time, area and category are deliberately NOT scored, because the SQL does not
+// score them either. Keep the two lists in lockstep.
+const COMPLETENESS_FIELDS = [
+  'description', 'url', 'image_url', 'lat', 'lng',
+  'postcode', 'venue', 'age_range', 'price',
+]
+
+// Mirrors the SQL's `nullif(trim(x), '') is not null` — a whitespace-only value
+// counts as missing, so an empty submission cannot outrank a real one. lat/lng
+// are numbers, and 0 is a legitimate coordinate, so they are tested for
+// null/undefined only rather than trimmed.
+const isPopulated = (value) => {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'number') return Number.isFinite(value)
+  return String(value).trim() !== ''
+}
+const completeness = (e) => COMPLETENESS_FIELDS.filter((f) => isPopulated(e[f])).length
+
+// Keep rule, in the same order the SQL cleanup uses: prefer approved (it may
+// already be live and linked), then the most complete row, then the oldest.
+// Sorts the keeper to index 0; the id compare only makes ties deterministic.
+function keeperFirst(a, b) {
+  if (!!a.approved !== !!b.approved) return a.approved ? -1 : 1
+  const byCompleteness = completeness(b) - completeness(a)
+  if (byCompleteness !== 0) return byCompleteness
+  // NULLS LAST, matching the SQL's `created_at asc nulls last`: a row with no
+  // timestamp must not pass itself off as the original. `Date.parse` returns
+  // NaN for a missing value, and `|| 0` would have sorted it FIRST — making an
+  // undated row the keeper over the genuine original.
+  const at = Date.parse(a.created_at)
+  const bt = Date.parse(b.created_at)
+  const aMissing = Number.isNaN(at)
+  const bMissing = Number.isNaN(bt)
+  if (aMissing !== bMissing) return aMissing ? 1 : -1
+  if (!aMissing && at !== bt) return at - bt
+  return String(a.id).localeCompare(String(b.id))
+}
+
+// Returns: flagged  id -> { size, keep } for every row in a group of 2+
+//          extras   ids of the rows a group would drop (everything but the keeper)
+//          groups   how many distinct keys collided
+function findDuplicates(rows) {
+  const byKey = new Map()
+  for (const e of rows) {
+    const key = duplicateKey(e)
+    if (!key) continue
+    const group = byKey.get(key)
+    if (group) group.push(e)
+    else byKey.set(key, [e])
+  }
+
+  const flagged = new Map()
+  const extras = new Set()
+  let groups = 0
+
+  for (const group of byKey.values()) {
+    if (group.length < 2) continue
+    groups++
+    const ranked = [...group].sort(keeperFirst)
+    ranked.forEach((e, i) => {
+      flagged.set(e.id, { size: group.length, keep: i === 0 })
+      if (i > 0) extras.add(e.id)
+    })
+  }
+
+  return { flagged, extras, groups }
+}
 
 export default function LondonEventsManager() {
   const { events, loading, error, refetch } = useAllLondonEvents()
@@ -44,6 +163,25 @@ export default function LondonEventsManager() {
   const pending = events.filter((e) => !e.approved && isCurrent(e))
   const approved = events.filter((e) => e.approved && isCurrent(e))
   const displayed = tab === 'pending' ? pending : approved
+
+  // Grouping deliberately spans BOTH tabs rather than the displayed one. The
+  // common case is a pending copy of an event that is already approved and live;
+  // grouped per-tab those two would look like a singleton each and be flagged
+  // nowhere. Derived purely from `events`, so that is the only dependency.
+  const duplicates = useMemo(() => findDuplicates([...pending, ...approved]), [events])
+
+  // Rows this tab could tick. Selection is per-tab and the bulk toolbar counts
+  // what it is about to remove, so ticking a row hidden on the other tab would
+  // put something the admin cannot see into a delete. The KEEPER is still chosen
+  // across both tabs, which is what makes a pending copy of an approved event the
+  // one offered up rather than the live row.
+  const duplicateExtras = displayed.filter((e) => duplicates.extras.has(e.id))
+
+  // Ticks the boxes and nothing else — the admin still hits Reject/Delete and
+  // confirms the existing modal, so nothing is destroyed without a click.
+  function selectDuplicates() {
+    setSelected(new Set(duplicateExtras.map((e) => e.id)))
+  }
 
   // Rows the parser skipped were NOT inserted, so unless they are listed in the
   // banner nobody ever learns the email mentioned them.
@@ -340,23 +478,59 @@ export default function LondonEventsManager() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit mb-6">
-        <button
-          onClick={() => setTab('pending')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            tab === 'pending' ? 'bg-white shadow-sm text-dark' : 'text-gray-500 hover:text-dark'
-          }`}
-        >
-          Pending ({pending.length})
-        </button>
-        <button
-          onClick={() => setTab('approved')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            tab === 'approved' ? 'bg-white shadow-sm text-dark' : 'text-gray-500 hover:text-dark'
-          }`}
-        >
-          Approved ({approved.length})
-        </button>
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+          <button
+            onClick={() => setTab('pending')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              tab === 'pending' ? 'bg-white shadow-sm text-dark' : 'text-gray-500 hover:text-dark'
+            }`}
+          >
+            Pending ({pending.length})
+          </button>
+          <button
+            onClick={() => setTab('approved')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              tab === 'approved' ? 'bg-white shadow-sm text-dark' : 'text-gray-500 hover:text-dark'
+            }`}
+          >
+            Approved ({approved.length})
+          </button>
+        </div>
+
+        {/* Quiet when there are none: the whole block disappears at zero. */}
+        {duplicates.flagged.size > 0 && (
+          <>
+            <span
+              className="flex items-center gap-1.5 text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5 text-xs font-bold"
+              title={
+                `${duplicates.flagged.size} rows fall into ${duplicates.groups} group` +
+                `${duplicates.groups === 1 ? '' : 's'} sharing a title, venue, postcode and ` +
+                'date (or weekday, for weekly events), counting Pending and Approved together. ' +
+                'Nothing removes duplicates when the site reads these rows, so every extra one ' +
+                'becomes a second card, a second map pin and a second newsletter bullet.'
+              }
+            >
+              <AlertTriangle size={14} />
+              {duplicates.flagged.size} possible duplicate{duplicates.flagged.size === 1 ? '' : 's'}
+            </span>
+
+            {duplicateExtras.length > 0 && (
+              <button
+                onClick={selectDuplicates}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full border-2 border-amber-200 text-amber-800 text-xs font-bold hover:bg-amber-50 transition-colors"
+                title={
+                  `Tick the ${duplicateExtras.length} extra row${duplicateExtras.length === 1 ? '' : 's'} ` +
+                  'on this tab, leaving the copy worth keeping (approved first, then the most ' +
+                  'complete, then the oldest) unticked. Nothing is removed until you confirm.'
+                }
+              >
+                <CopyCheck size={14} />
+                Select duplicates ({duplicateExtras.length})
+              </button>
+            )}
+          </>
+        )}
       </div>
 
       {/* Bulk action toolbar */}
@@ -434,7 +608,26 @@ export default function LondonEventsManager() {
                     />
                   </td>
                   <td className="px-6 py-4">
-                    <p className="font-semibold text-dark">{event.title}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-dark">{event.title}</p>
+                      {/* The pill carries its own words, so it still reads without colour. */}
+                      {duplicates.flagged.has(event.id) && (
+                        <span
+                          className="flex items-center gap-1 text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 text-[11px] font-bold"
+                          title={
+                            `${duplicates.flagged.get(event.id).size} rows share this title, venue, ` +
+                            `postcode and ${event.is_recurring ? 'weekday' : 'date'}, across Pending ` +
+                            'and Approved. ' +
+                            (duplicates.flagged.get(event.id).keep
+                              ? 'This is the copy "Select duplicates" would keep.'
+                              : 'This is one of the extras "Select duplicates" would tick.')
+                          }
+                        >
+                          <AlertTriangle size={11} />
+                          Possible duplicate ({duplicates.flagged.get(event.id).size} rows)
+                        </span>
+                      )}
+                    </div>
                     <p className="text-gray-400 text-xs">{event.location}</p>
                   </td>
                   <td className="px-6 py-4 text-gray-600">{formatDate(event.date)}</td>

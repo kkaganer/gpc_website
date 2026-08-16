@@ -137,7 +137,24 @@ export default function LondonEventForm() {
       }
       navigate('/admin/whats-on')
     } catch (err) {
-      setError(err.message || 'Failed to save event.')
+      // 23505 = unique violation from the duplicate guard on london_events. The raw
+      // Postgres constraint text says nothing useful, so translate it. Unlike the
+      // public form we must NOT treat this as a success: the admin may have been
+      // editing deliberately, and needs to know nothing was written. The guard keys
+      // on day of week for recurring rows and on date for one-offs, so name the
+      // right fields.
+      if (err?.code === '23505') {
+        const matchedOn = form.is_recurring
+          ? 'the same title, day of the week and venue'
+          : 'the same title, date and venue'
+        setError(
+          isEditing
+            ? `Not saved — your changes would make this a duplicate of an event with ${matchedOn} already in What's On. Search for that event and edit it instead of keeping two copies.`
+            : `Not added — an event with ${matchedOn} is already in What's On. Search for it there and edit it rather than adding a second copy.`
+        )
+      } else {
+        setError(err.message || 'Failed to save event.')
+      }
     } finally {
       setSaving(false)
     }

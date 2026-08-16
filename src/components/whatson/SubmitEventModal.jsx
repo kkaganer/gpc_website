@@ -23,6 +23,7 @@ export default function SubmitEventModal({ onClose }) {
   })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [alreadyListed, setAlreadyListed] = useState(false)
   const [error, setError] = useState('')
 
   function set(field, value) {
@@ -48,7 +49,17 @@ export default function SubmitEventModal({ onClose }) {
       if (insertError) throw insertError
       setSubmitted(true)
     } catch (err) {
-      setError(err.message || 'Failed to submit. Please try again.')
+      // 23505 = unique violation: the duplicate guard on london_events rejected this
+      // row because the same event is already listed. That is not a user mistake — a
+      // parent who submitted twice, or a second parent submitting the same community
+      // event, got exactly the outcome they wanted. Show the thank-you state, not an
+      // error. Every other failure keeps the normal error treatment.
+      if (err?.code === '23505') {
+        setAlreadyListed(true)
+        setSubmitted(true)
+      } else {
+        setError(err.message || 'Failed to submit. Please try again.')
+      }
     } finally {
       setSubmitting(false)
     }
@@ -72,7 +83,9 @@ export default function SubmitEventModal({ onClose }) {
             </div>
             <h3 className="font-heading font-bold text-dark text-lg">Thank you!</h3>
             <p className="text-gray-500 text-sm mt-2">
-              Your event has been submitted and will appear after review by our team.
+              {alreadyListed
+                ? "This event is already on our list, so there's nothing more to do."
+                : 'Your event has been submitted and will appear after review by our team.'}
             </p>
             <button
               onClick={onClose}

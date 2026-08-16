@@ -221,6 +221,104 @@ function toBool(value: unknown, price: string | null): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Duplicates
+//
+// WHY THIS EXISTS. Nothing downstream de-duplicates. useLondonEvents.js,
+// WhatsOn.jsx, EventMap.jsx and the newsletter renderer all read `london_events`
+// straight through — no DISTINCT, no group-by, no dedup filter anywhere. So a
+// duplicate row is not an untidy database, it is a SECOND CARD on What's On, a
+// SECOND PIN on the map and a SECOND BULLET in the newsletter, and the only
+// thing that ever fixes it is an admin noticing and deleting it by hand.
+//
+// Getting one is easy: an organiser re-sends last week's email, an admin pastes
+// the same thread twice, or one email quotes its own forwarded copy so the model
+// reports the same class twice from a single parse. All three are handled below.
+//
+// THE KEY is the canonical one, shared with migration 021's unique indexes and
+// with the other write paths. Keep the normalisation identical to the SQL:
+//     norm_title    = lower(trim(title))
+//     norm_venue    = coalesce(lower(trim(venue)), '')
+//     norm_postcode = coalesce(upper(replace(trim(postcode), ' ', '')), '')
+// A recurring row keys on `day_of_week`, NOT `date`: a regular's date is only its
+// next occurrence and drifts week to week, so it cannot identify the class. A
+// one-off keys on `date`. The two live in separate namespaces (the 'w'/'d' prefix
+// below mirrors the two partial indexes) so a one-off can never be judged a
+// duplicate of a weekly regular.
+//
+// Venue and postcode are IN the key deliberately: two libraries can both
+// legitimately run "Rhyme Time" on a Tuesday morning, and a guard that rejected
+// the second would be worse than no guard.
+//
+// SCOPE is rows with `activity_id is null` — manual, public-form and email rows.
+// Discovery-published rows are `publish_activity`'s business and are left alone.
+// ---------------------------------------------------------------------------
+
+/** Field separator that cannot occur in a title, venue or postcode. */
+const KEY_SEP = '\u001f'
+
+/** The shape the key needs — satisfied by both a candidate row and a DB row. */
+interface KeyableRow {
+  title?: unknown
+  date?: unknown
+  venue?: unknown
+  postcode?: unknown
+  is_recurring?: unknown
+  day_of_week?: unknown
+}
+
+function duplicateKey(row: KeyableRow): string {
+  const title = String(row.title ?? '').trim().toLowerCase()
+  const venue = String(row.venue ?? '').trim().toLowerCase()
+  const postcode = String(row.postcode ?? '').trim().toUpperCase().replace(/ /g, '')
+  // 'w' = weekly regular keyed on day_of_week (coalesce(day_of_week, -1) in SQL);
+  // 'd' = one-off keyed on the date.
+  const when = row.is_recurring
+    ? `w${String(row.day_of_week ?? -1)}`
+    : `d${String(row.date ?? '')}`
+  return [title, when, venue, postcode].join(KEY_SEP)
+}
+
+/** Which parts of the key clashed, in words an admin can act on. */
+function keyParts(isRecurring: unknown): string {
+  return isRecurring ? 'title, weekly day and venue' : 'title, date and venue'
+}
+
+/** Enough of the existing row to find it in the Pending/Approved table. */
+function describeExisting(row: any): string {
+  const where = [row.venue, row.postcode]
+    .map((v) => (v ? String(v).trim() : ''))
+    .filter(Boolean)
+    .join(', ')
+  const when = row.is_recurring
+    ? `every ${DAY_NAMES[row.day_of_week] ?? 'week'}`
+    : `on ${row.date}`
+  return `"${row.title}"${where ? ` at ${where}` : ''} ${when}`
+}
+
+/** A parsed event that the table already holds. Names the tab it is sitting on. */
+function alreadyListedReason(existing: any): string {
+  const status = existing.approved ? 'Approved' : 'Pending'
+  return `Already listed — an event with this ${keyParts(existing.is_recurring)} is already in What's On (${status}): ${describeExisting(existing)}. It was not added again.`
+}
+
+/** The same event described twice inside ONE email. */
+function repeatedInEmailReason(isRecurring: unknown): string {
+  return `Listed twice in this email — an earlier event in this email has the same ${keyParts(isRecurring)}, so only the first copy was kept.`
+}
+
+/**
+ * A 23505 at insert time. Migration 021's unique indexes mean the pre-insert
+ * check and the insert itself are not atomic: an admin approving a form
+ * submission, or a second parse of the same thread running alongside this one,
+ * can land the row in between. That is a normal outcome, not a failure — the
+ * guard did exactly its job, and it is also the backstop for anything the
+ * in-memory check could not see.
+ */
+function conflictReason(row: Record<string, unknown>): string {
+  return `Already listed — What's On gained an event with this ${keyParts(row.is_recurring)} while this email was being parsed, so the duplicate guard rejected it. It was not added.`
+}
+
+// ---------------------------------------------------------------------------
 // Prompt
 // ---------------------------------------------------------------------------
 
@@ -493,13 +591,110 @@ Deno.serve(async (req) => {
       })
     }
 
+    // One client for both the duplicate check and the insert below.
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    )
+
+    // ------------------------------------------------------------- duplicates
+    // Run BEFORE geocoding, so a copy we are going to reject never costs a
+    // postcodes.io lookup. See the Duplicates section above for why any of this
+    // matters: nothing on the read side de-duplicates, so a duplicate that lands
+    // is a second card, a second pin and a second newsletter bullet until a
+    // human deletes it.
+
+    // (a) Against the rest of THIS email. One forwarded thread can describe the
+    //     same class twice, and both copies would otherwise be inserted in the
+    //     same batch — the database guard cannot save us there, because both
+    //     rows arrive in a single statement. First copy wins; order is the order
+    //     the model returned, which is the order the email reads in.
+    const seenInEmail = new Set<string>()
+    const fresh: Candidate[] = []
+    for (const candidate of candidates) {
+      const key = duplicateKey(candidate.row)
+      if (seenInEmail.has(key)) {
+        skipped.push({
+          title: String(candidate.row.title),
+          date: String(candidate.row.date),
+          reason: repeatedInEmailReason(candidate.row.is_recurring),
+        })
+        continue
+      }
+      seenInEmail.add(key)
+      fresh.push(candidate)
+    }
+
+    // (b) Against what `london_events` already holds. ONE round trip: fetch every
+    //     row that could POSSIBLY share a key with something in this email, then
+    //     match exactly in memory. The filter is safe to widen but never to
+    //     narrow — a one-off duplicate must share the same `date`, and a weekly
+    //     duplicate must share the same `day_of_week`, so those two predicates
+    //     cannot miss a real match. Everything else in the key (title, venue,
+    //     postcode) is normalised text that Postgres would not compare the way
+    //     `duplicateKey` does, so it is settled here rather than in the query.
+    //     Only `activity_id is null` rows are considered: discovery-published
+    //     rows are out of scope by design.
+    const kept: Candidate[] = []
+    const oneOffDates = [...new Set(
+      fresh.filter((c) => !c.row.is_recurring).map((c) => String(c.row.date)),
+    )]
+    const weeklyDows = [...new Set(
+      fresh.filter((c) => c.row.is_recurring).map((c) => Number(c.row.day_of_week)),
+    )]
+    const orParts: string[] = []
+    if (oneOffDates.length) orParts.push(`date.in.(${oneOffDates.map((d) => `"${d}"`).join(',')})`)
+    if (weeklyDows.length) orParts.push(`and(is_recurring.is.true,day_of_week.in.(${weeklyDows.join(',')}))`)
+
+    if (fresh.length === 0 || orParts.length === 0) {
+      kept.push(...fresh)
+    } else {
+      const { data: existingRows, error: existingError } = await supabase
+        .from('london_events')
+        .select('title, date, venue, postcode, is_recurring, day_of_week, approved')
+        .is('activity_id', null)
+        .or(orParts.join(','))
+
+      if (existingError) {
+        // A failed CHECK must not lose the parse — the unique indexes from
+        // migration 021 still stand behind the insert below, and a 23505 there
+        // is handled as an "already listed" skip. Say so rather than pretending
+        // the email was checked.
+        for (const candidate of fresh) {
+          candidate.warnings.push(
+            `could not check What's On for an existing copy (${existingError.message}) — worth a look at the Pending and Approved tabs`,
+          )
+        }
+        kept.push(...fresh)
+      } else {
+        const existingByKey = new Map<string, any>()
+        for (const row of existingRows || []) {
+          const key = duplicateKey(row)
+          // First wins: the admin only needs ONE row named to go and find it.
+          if (!existingByKey.has(key)) existingByKey.set(key, row)
+        }
+        for (const candidate of fresh) {
+          const match = existingByKey.get(duplicateKey(candidate.row))
+          if (match) {
+            skipped.push({
+              title: String(candidate.row.title),
+              date: String(candidate.row.date),
+              reason: alreadyListedReason(match),
+            })
+          } else {
+            kept.push(candidate)
+          }
+        }
+      }
+    }
+
     // ---------------------------------------------------------------- geocode
     // ONE batched postcodes.io lookup for every event in the email, not one per
     // event. It never throws; unresolvable postcodes are simply absent.
-    const places = await resolvePostcodes(candidates.map((c) => c.postcode))
+    const places = await resolvePostcodes(kept.map((c) => c.postcode))
     const geocoded = new Map<Candidate, boolean>()
 
-    for (const candidate of candidates) {
+    for (const candidate of kept) {
       const place = candidate.postcode ? places.get(candidate.postcode) : undefined
       if (place) {
         candidate.row.lat = place.lat
@@ -521,27 +716,33 @@ Deno.serve(async (req) => {
     // ONE batch insert, because Postgres makes it a single round trip. It is
     // all-or-nothing though, so if it fails the rows are retried individually:
     // one malformed event must not take the rest of the email down with it.
+    //
+    // Migration 021's unique indexes make that fallback load-bearing in a NEW
+    // way. The check above and this insert are not atomic, so a racing write —
+    // an admin approving a form submission, a second parse of the same thread —
+    // can land the row in between and raise 23505. A 23505 aborts the WHOLE
+    // batch, so without the retry a single racing duplicate would be reported as
+    // every event in the email having failed. The retry re-runs each row on its
+    // own, and 23505 there is recorded as "already listed" rather than as an
+    // error: the guard doing its job is a normal outcome, not a fault.
     const inserted: Candidate[] = []
-    if (candidates.length > 0) {
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-      )
-
+    if (kept.length > 0) {
       const { error: batchError } = await supabase
         .from('london_events')
-        .insert(candidates.map((c) => c.row))
+        .insert(kept.map((c) => c.row))
 
       if (!batchError) {
-        inserted.push(...candidates)
+        inserted.push(...kept)
       } else {
-        for (const candidate of candidates) {
+        for (const candidate of kept) {
           const { error } = await supabase.from('london_events').insert(candidate.row)
           if (error) {
             skipped.push({
               title: String(candidate.row.title),
               date: String(candidate.row.date),
-              reason: `Database insert failed: ${error.message}`,
+              reason: error.code === '23505'
+                ? conflictReason(candidate.row)
+                : `Database insert failed: ${error.message}`,
             })
           } else {
             inserted.push(candidate)
