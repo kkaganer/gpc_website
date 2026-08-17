@@ -4,7 +4,8 @@ import { syncContactToBrevo, BREVO_STATUS } from '../_lib/brevo.js'
 // The columns the admin contract returns. Kept as one string so GET and the
 // retry reload cannot drift apart from each other.
 const SUBSCRIBER_COLUMNS =
-  'id, email, subscribed_at, brevo_status, brevo_synced_at, brevo_error, brevo_attempts, brevo_last_attempt_at, source'
+  'id, email, subscribed_at, unsubscribed_at, brevo_status, brevo_synced_at, ' +
+  'brevo_error, brevo_attempts, brevo_last_attempt_at, source'
 
 // newsletter_subscribers is ~29 rows, so the admin screen deliberately does not
 // paginate. The cap exists only so a runaway table can never dump unbounded
@@ -101,15 +102,23 @@ export default async function handler(req, res) {
 
       let query = supabase
         .from('newsletter_subscribers')
-        .select('id, email, brevo_attempts')
+        .select('id, email, brevo_attempts, unsubscribed_at')
 
       if (id) {
         query = query.eq('id', id)
       } else {
         // Already-synced rows are the desired end state — retrying them would
         // only burn Brevo quota and reset timestamps that are already correct.
+        //
+        // AND NEVER AN UNSUBSCRIBED ROW. `unsubscribed_at` is a consent record:
+        // pushing that contact back to Brevo re-adds someone to a list they
+        // left, which is the single thing the whole consent design exists to
+        // prevent. It has to be enforced HERE and not only in the admin screen,
+        // because retry-all sends no row ids at all — the server picks the set,
+        // so a client-side gate cannot reach it.
         query = query
           .neq('brevo_status', BREVO_STATUS.SYNCED)
+          .is('unsubscribed_at', null)
           .order('subscribed_at', { ascending: true })
           .limit(MAX_ROWS)
       }
@@ -120,6 +129,18 @@ export default async function handler(req, res) {
       }
       if (id && (!rows || rows.length === 0)) {
         return res.status(404).json({ error: 'Subscriber not found' })
+      }
+
+      // The bulk branch filters unsubscribed rows out in SQL; the single-id
+      // branch selects one row by id, so it needs its own check. Refused rather
+      // than silently skipped: the admin asked for something specific and is
+      // owed the reason, and a silent no-op would read as a failed retry and
+      // invite them to try again.
+      if (id && rows[0].unsubscribed_at) {
+        return res.status(409).json({
+          error: 'That person unsubscribed, so they cannot be pushed back to Brevo. ' +
+            'Re-adding a contact who opted out is exactly what this record prevents.',
+        })
       }
 
       let retried = 0
