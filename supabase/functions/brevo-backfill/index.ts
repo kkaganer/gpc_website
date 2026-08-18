@@ -44,12 +44,39 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
+  // `.is('unsubscribed_at', null)` IS NOT OPTIONAL. This function predates the
+  // consent column: without the filter it walked every row and pushed each one
+  // to Brevo, which after the import means re-adding the 51 people who had
+  // unsubscribed — putting them back on a list they left. Same defect, and the
+  // same fix, as the retry-all branch in api/admin/subscribers.js.
   const { data: subs } = await supabase
     .from('newsletter_subscribers')
-    .select('email, subscribed_at')
+    .select('id, email, subscribed_at, brevo_status, brevo_attempts')
+    .is('unsubscribed_at', null)
     .order('subscribed_at', { ascending: true })
 
-  const results = { checked: 0, already_present: 0, added: 0, failed: 0 }
+  const results = { checked: 0, already_present: 0, added: 0, failed: 0, status_written: 0 }
+
+  // Mirrors api/subscribe.js exactly: synced stamps the time and clears any
+  // error, anything else keeps the error visible, and every attempt bumps the
+  // counter. Failures here are logged and swallowed — what Brevo did is already
+  // true whether or not we managed to record it.
+  async function record(row: any, status: string, error: string | null) {
+    if (dryRun) return
+    const now = new Date().toISOString()
+    const { error: upErr } = await supabase
+      .from('newsletter_subscribers')
+      .update({
+        brevo_status: status,
+        brevo_error: status === 'synced' ? null : error,
+        brevo_attempts: (Number(row.brevo_attempts) || 0) + 1,
+        brevo_last_attempt_at: now,
+        ...(status === 'synced' ? { brevo_synced_at: now } : {}),
+      })
+      .eq('id', row.id)
+    if (upErr) console.error('[brevo-backfill] could not record status for', row.id, upErr.message)
+    else results.status_written++
+  }
   const failures: Array<Record<string, unknown>> = []
   const wouldAdd: string[] = []
 
@@ -59,7 +86,14 @@ Deno.serve(async (req) => {
     results.checked++
 
     const look = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`, { headers: h })
-    if (look.status === 200) { results.already_present++; continue }
+    if (look.status === 200) {
+      results.already_present++
+      // Present in Brevo is exactly what 'synced' means. This is the branch that
+      // settles the rows migration 019 deliberately left at 'pending' rather
+      // than guess about — now it is checked, not assumed.
+      await record(row, 'synced', null)
+      continue
+    }
 
     const [user, domain] = email.split('@')
     const masked = `${user.slice(0, 2)}***@${domain ?? '?'}`
@@ -77,11 +111,18 @@ Deno.serve(async (req) => {
     })
     if (create.ok || create.status === 204) {
       results.added++
+      await record(row, 'synced', null)
     } else {
       const err = await create.json().catch(() => ({}))
       // Already-existing is success, not failure.
-      if (err?.code === 'duplicate_parameter') results.already_present++
-      else { results.failed++; failures.push({ email: masked, status: create.status, code: err?.code }) }
+      if (err?.code === 'duplicate_parameter') {
+        results.already_present++
+        await record(row, 'synced', null)
+      } else {
+        results.failed++
+        failures.push({ email: masked, status: create.status, code: err?.code })
+        await record(row, 'failed', `Brevo ${create.status}: ${err?.code ?? 'unknown'}`)
+      }
     }
   }
 
