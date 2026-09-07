@@ -106,24 +106,41 @@ export function groupEvents(events) {
     .filter((group) => group.count > 0)
 }
 
+// Real `price` values are sentences, not amounts: "£1 per child payable at the
+// session", "£7.50 adults, children free". Rendered whole they wrap to three
+// lines inside a pill and every row grows to match. The pill wants the number;
+// the terms belong on the event page the row links to.
+const LEADING_AMOUNT = /^(?:from\s+)?([£$€]\s?\d+(?:[.,]\d{2})?)/i
+const MAX_PILL_CHARS = 12
+
 /**
  * The price pill.
  *
  * Free is the thing parents scan for, so it gets the only coloured plate;
  * everything else stays neutral so the page does not turn into a fruit salad.
  *
+ * `text` is always short enough to sit on one line. `full` keeps the original
+ * so the row can carry it as a tooltip rather than losing it.
+ *
  * @param {{is_free?: boolean, price?: string}} event
- * @returns {{text: string, bg: string, fg: string}}
+ * @returns {{text: string, full: string, bg: string, fg: string}}
  */
 export function priceLabel(event) {
   if (event?.is_free) {
-    return { text: 'Free', bg: '#ecfdf5', fg: '#047857' }
+    return { text: 'Free', full: 'Free', bg: '#ecfdf5', fg: '#047857' }
   }
   const price = typeof event?.price === 'string' ? event.price.trim() : ''
-  if (price) {
-    return { text: price, bg: '#f9fafb', fg: '#4a5565' }
+  if (!price) {
+    return { text: 'See details', full: '', bg: '#f9fafb', fg: '#6a7282' }
   }
-  return { text: 'See details', bg: '#f9fafb', fg: '#6a7282' }
+
+  const neutral = { full: price, bg: '#f9fafb', fg: '#4a5565' }
+  if (price.length <= MAX_PILL_CHARS) return { text: price, ...neutral }
+
+  const amount = price.match(LEADING_AMOUNT)
+  if (amount) return { text: amount[1].replace(/\s/g, ''), ...neutral }
+
+  return { text: `${price.slice(0, MAX_PILL_CHARS - 1).trimEnd()}…`, ...neutral }
 }
 
 /**

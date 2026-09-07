@@ -191,7 +191,9 @@ function ListingExample() {
 
 const EXAMPLES = {
   presenting: (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    // Stacked, not side by side: these sit inside a third-width column on
+    // desktop, and two-up in there squeezed every line to three words.
+    <div className="grid grid-cols-1 gap-5">
       <ExampleFrame label="Event mode">
         <PresentingEventExample />
       </ExampleFrame>

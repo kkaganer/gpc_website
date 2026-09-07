@@ -256,16 +256,18 @@ function EventRow({ event }) {
         <div className="font-bold text-base leading-snug text-dark">{event.title}</div>
         <div className="text-[13px] leading-snug text-gray-500 mt-0.5">{eventMeta(event)}</div>
         <span
-          className="sm:hidden inline-block font-bold text-xs px-2.5 py-1 rounded-full mt-1.5"
+          className="sm:hidden inline-block font-bold text-xs px-2.5 py-1 rounded-full mt-1.5 whitespace-nowrap"
           style={{ backgroundColor: price.bg, color: price.fg }}
+          title={price.full || undefined}
         >
           {price.text}
         </span>
       </div>
       <div className="hidden sm:block text-right">
         <span
-          className="inline-block font-bold text-[13px] px-3 py-1 rounded-full"
+          className="inline-block font-bold text-[13px] px-3 py-1 rounded-full whitespace-nowrap"
           style={{ backgroundColor: price.bg, color: price.fg }}
+          title={price.full || undefined}
         >
           {price.text}
         </span>
