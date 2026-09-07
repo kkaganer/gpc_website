@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   MousePointerClick,
   Globe,
+  Mail,
 } from 'lucide-react'
 
 // The how-to for running a newsletter week.
@@ -51,6 +52,17 @@ function Note({ children, tone = 'info' }) {
   )
 }
 
+function Shortcut({ children }) {
+  return (
+    <div className="border border-dashed border-primary/40 rounded-xl px-4 py-3 bg-[#fff5fb]">
+      <div className="font-bold text-[11px] uppercase tracking-wider text-[#d1067f] flex items-center gap-1.5">
+        <Mail size={13} /> Shortcut: paste the email
+      </div>
+      <div className="text-sm text-gray-700 leading-relaxed mt-1.5 space-y-2">{children}</div>
+    </div>
+  )
+}
+
 export default function Help() {
   return (
     <div className="max-w-3xl">
@@ -73,6 +85,24 @@ export default function Help() {
             A multi-week run (a theatre run, an exhibition) appears in every edition it spans, not
             just the week it opened. That is deliberate — you do not need to re-add it.
           </p>
+          <Shortcut>
+            <p>
+              When an organiser emails asking to be featured, you do not have to retype it. On
+              What&rsquo;s On press <strong>Parse Organiser Email</strong>, paste the whole email
+              (signature and all), and it creates the events for you.
+            </p>
+            <p>
+              They arrive as <strong>Pending</strong>, in the same review tab you already use —
+              nothing is published without you approving it. A run with a start and end date
+              becomes <em>one</em> event covering the whole run, not one per day.
+            </p>
+            <p>
+              Read the <strong>skipped</strong> list it shows you afterwards. Skipped rows were{' '}
+              <em>not</em> created, and the usual reason is an event whose date has already passed
+              — nearly always because the email did not say the year and it guessed wrong. If a
+              skipped one is real, add it by hand with the right date.
+            </p>
+          </Shortcut>
         </Step>
 
         <Step n={2} title="Tag this week's advertisers" icon={Megaphone}>
@@ -96,6 +126,25 @@ export default function Help() {
             <strong>Free listing</strong> appears as an ordinary line in the list like any other
             event.
           </p>
+          <Shortcut>
+            <p>
+              Advertiser enquiries can be pasted too: on Advertisers press{' '}
+              <strong>Parse Advertiser Email</strong> and paste the thread. It creates one row per
+              event mentioned.
+            </p>
+            <p>
+              <strong>Everything it creates still needs editing before it will appear.</strong>{' '}
+              Parsed rows are always saved as <strong>Free listing</strong> and{' '}
+              <strong>Pending</strong>, whatever the email actually asked for — so a business that
+              has paid for the top slot will be sitting there as an unpaid pending listing until
+              you set the ad type and status yourself.
+            </p>
+            <p>
+              It also <em>guesses</em> the newsletter date: it reads a date from the email if there
+              is one, and otherwise falls back to the next upcoming Friday. Check it against what
+              the advertiser actually booked.
+            </p>
+          </Shortcut>
           <Note tone="warn">
             <AlertTriangle size={15} className="inline mr-1.5 -mt-0.5" />
             This is the step that goes wrong most often, and it fails <em>silently</em>. A
@@ -206,6 +255,28 @@ export default function Help() {
               The generate step runs on a Supabase edge function. If it has not been deployed since
               the last change, this is the error you get. It is a developer fix, not something you
               can correct from here.
+            </dd>
+          </div>
+          <div>
+            <dt className="font-semibold text-dark">
+              A parsed advertiser is not in the newsletter
+            </dt>
+            <dd className="text-gray-600 leading-relaxed mt-1">
+              Expected: the parser saves everything as Free listing / Pending, and Pending never
+              appears. Open the row, set the real ad type and set the status to Confirmed.
+            </dd>
+          </div>
+          <div>
+            <dt className="font-semibold text-dark">
+              The email parser skipped something, or found nothing
+            </dt>
+            <dd className="text-gray-600 leading-relaxed mt-1">
+              Skipped rows are listed with a reason and were not created — most often the date has
+              already passed because the year was guessed wrong. Both parsers read the text you
+              paste, so include the whole email; a forwarded fragment with the dates trimmed off
+              gives it nothing to work with. Parsing uses an outside service, so &ldquo;failed to
+              parse&rdquo; can also mean that service is briefly down — retrying is worth one go
+              before typing it in by hand.
             </dd>
           </div>
           <div>
