@@ -10,6 +10,7 @@ import {
   MousePointerClick,
   Globe,
   Mail,
+  Radar,
 } from 'lucide-react'
 
 // The how-to for running a newsletter week.
@@ -52,11 +53,11 @@ function Note({ children, tone = 'info' }) {
   )
 }
 
-function Shortcut({ children }) {
+function Shortcut({ children, label = 'Shortcut: paste the email', icon: Icon = Mail }) {
   return (
     <div className="border border-dashed border-primary/40 rounded-xl px-4 py-3 bg-[#fff5fb]">
       <div className="font-bold text-[11px] uppercase tracking-wider text-[#d1067f] flex items-center gap-1.5">
-        <Mail size={13} /> Shortcut: paste the email
+        <Icon size={13} /> {label}
       </div>
       <div className="text-sm text-gray-700 leading-relaxed mt-1.5 space-y-2">{children}</div>
     </div>
@@ -85,11 +86,33 @@ export default function Help() {
             A multi-week run (a theatre run, an exhibition) appears in every edition it spans, not
             just the week it opened. That is deliberate — you do not need to re-add it.
           </p>
+          <Shortcut label="Shortcut: run the scraper" icon={Radar}>
+            <p>
+              Discovery pulls events in from open listings feeds. You can start it from{' '}
+              <strong>two</strong> places — <strong>Run discovery</strong> on the Discovery screen,
+              or <strong>Discover Events</strong> on What&rsquo;s On. They are the same run, not
+              two different ones, so there is no reason to do both.
+            </p>
+            <p>
+              <strong>Wherever you start it, the results end up in Discovery.</strong> Nothing goes
+              straight into What&rsquo;s On, which is why starting it from What&rsquo;s On gives
+              you a &ldquo;Review discovered&rdquo; link instead of just refreshing the list in
+              front of you. Approving on the Discovery screen is what publishes an event into
+              What&rsquo;s On.
+            </p>
+            <p>
+              It works through the feeds one at a time and the counter shows how many are done. If
+              it finishes with &ldquo;still running server-side&rdquo;, that is the page giving up
+              on waiting, not the run failing — it carries on without you, and the results appear
+              under Discovery shortly after.
+            </p>
+          </Shortcut>
           <Shortcut>
             <p>
               When an organiser emails asking to be featured, you do not have to retype it. On
-              What&rsquo;s On press <strong>Parse Organiser Email</strong>, paste the whole email
-              (signature and all), and it creates the events for you.
+              What&rsquo;s On press <strong>Parse Email</strong> — the box that opens is titled
+              &ldquo;Parse Organiser Email&rdquo; — paste the whole email, signature and all, and
+              it creates the events for you.
             </p>
             <p>
               They arrive as <strong>Pending</strong>, in the same review tab you already use —
@@ -129,8 +152,8 @@ export default function Help() {
           <Shortcut>
             <p>
               Advertiser enquiries can be pasted too: on Advertisers press{' '}
-              <strong>Parse Advertiser Email</strong> and paste the thread. It creates one row per
-              event mentioned.
+              <strong>Parse Email</strong> and paste the thread. It creates one row per event
+              mentioned.
             </p>
             <p>
               <strong>Everything it creates still needs editing before it will appear.</strong>{' '}
@@ -264,6 +287,16 @@ export default function Help() {
             <dd className="text-gray-600 leading-relaxed mt-1">
               Expected: the parser saves everything as Free listing / Pending, and Pending never
               appears. Open the row, set the real ad type and set the status to Confirmed.
+            </dd>
+          </div>
+          <div>
+            <dt className="font-semibold text-dark">
+              I ran discovery from What&rsquo;s On and nothing appeared there
+            </dt>
+            <dd className="text-gray-600 leading-relaxed mt-1">
+              Working as intended. Discovery always lands in the Discovery review queue no matter
+              which screen you started it from — nothing is ever published straight into
+              What&rsquo;s On. Approve it under Discovery and it appears.
             </dd>
           </div>
           <div>
