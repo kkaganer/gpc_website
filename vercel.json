@@ -10,7 +10,7 @@
     },
     {
       "source": "/whats-on/:date(\\d{4}-\\d{2}-\\d{2})",
-      "destination": "/api/og/whats-on?date=$date"
+      "destination": "/api/og/whats-on?date=:date"
     },
     {
       "source": "/(.*)",
