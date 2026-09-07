@@ -148,7 +148,12 @@ export default function NewsletterManager() {
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-bold text-dark">Newsletter</h1>
-          <p className="text-gray-500 text-sm mt-1">Generate and manage weekly newsletters</p>
+          <p className="text-gray-500 text-sm mt-1">
+            Generate and manage weekly newsletters ·{' '}
+            <Link to="/admin/help" className="text-[#d1067f] font-semibold hover:underline">
+              How to send the newsletter
+            </Link>
+          </p>
         </div>
         <Link
           to="/admin/newsletter/editor"

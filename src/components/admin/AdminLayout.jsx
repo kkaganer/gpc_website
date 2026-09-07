@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router'
-import { LayoutDashboard, CalendarDays, MapPin, Radar, Newspaper, Megaphone, MailCheck, Users, LogOut } from 'lucide-react'
+import { LayoutDashboard, CalendarDays, MapPin, Radar, Newspaper, Megaphone, MailCheck, Users, LogOut, LifeBuoy } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
 const sidebarLinks = [
@@ -13,6 +13,8 @@ const sidebarLinks = [
   // Where Brevo sync failures surface: every inline signup is listed here with its sync status.
   { to: '/admin/subscribers', label: 'Subscribers', icon: MailCheck },
   { to: '/admin/users', label: 'Users', icon: Users },
+  // Last in the list on purpose: you go looking for it, you don't pass through it.
+  { to: '/admin/help', label: 'Help', icon: LifeBuoy },
 ]
 
 export default function AdminLayout() {

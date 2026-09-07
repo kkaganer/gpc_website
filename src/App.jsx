@@ -33,6 +33,7 @@ const Dashboard = lazy(() => import('./pages/admin/Dashboard'))
 const SubscribersManager = lazy(() => import('./pages/admin/SubscribersManager'))
 const UsersManager = lazy(() => import('./pages/admin/UsersManager'))
 const ResetPassword = lazy(() => import('./pages/admin/ResetPassword'))
+const Help = lazy(() => import('./pages/admin/Help'))
 
 const Spinner = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -92,6 +93,7 @@ function App() {
             <Route path="newsletter-advertisers/:id/edit" element={<NewsletterAdvertiserForm />} />
             <Route path="subscribers" element={<SubscribersManager />} />
             <Route path="users" element={<UsersManager />} />
+            <Route path="help" element={<Help />} />
           </Route>
         </Routes>
       </Suspense>
