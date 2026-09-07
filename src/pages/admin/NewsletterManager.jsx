@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router'
-import { Sparkles, Copy, CheckCircle2, Trash2, Pencil } from 'lucide-react'
+import { Sparkles, Copy, CheckCircle2, Trash2, Pencil, MessageCircle, MousePointerClick } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 
@@ -23,11 +23,50 @@ export default function NewsletterManager() {
     "Hey folks! Every week I spend a couple of hours making this newsletter. I want to provide stuff that's useful to you, so let me know if you have feedback"
   )
   const [weekOf, setWeekOf] = useState(nearestFriday())
+  const [clicks, setClicks] = useState([])
 
   useEffect(() => {
     document.title = 'Newsletter | GPC Admin'
     fetchDrafts()
   }, [])
+
+  // The number Tier 1 and Tier 2 advertisers were promised. Counted per edition,
+  // so it answers "how did last Friday do" rather than an all-time total.
+  useEffect(() => {
+    let cancelled = false
+    async function fetchClicks() {
+      const { data, error } = await supabase
+        .from('advertiser_clicks')
+        .select('advertiser_id, source, newsletter_advertisers(advertiser_name, ad_type)')
+        .eq('edition_date', weekOf)
+      if (cancelled || error) {
+        if (!cancelled && error) setClicks([])
+        return
+      }
+      // Rolled up here rather than in SQL: the volumes are small, and a count
+      // aggregate would need a view of its own for one admin panel.
+      const byAdvertiser = new Map()
+      for (const row of data || []) {
+        const key = row.advertiser_id
+        const current = byAdvertiser.get(key) || {
+          id: key,
+          name: row.newsletter_advertisers?.advertiser_name || 'Unknown advertiser',
+          adType: row.newsletter_advertisers?.ad_type || '',
+          email: 0,
+          web: 0,
+          total: 0,
+        }
+        current[row.source === 'email' ? 'email' : 'web'] += 1
+        current.total += 1
+        byAdvertiser.set(key, current)
+      }
+      setClicks([...byAdvertiser.values()].sort((a, b) => b.total - a.total))
+    }
+    fetchClicks()
+    return () => {
+      cancelled = true
+    }
+  }, [weekOf])
 
   async function fetchDrafts() {
     setLoading(true)
@@ -52,6 +91,16 @@ export default function NewsletterManager() {
       setGenError('Failed to generate newsletter. Make sure the edge function is deployed.')
     } finally {
       setGenerating(false)
+    }
+  }
+
+  async function handleCopyWhatsapp(draft) {
+    try {
+      await navigator.clipboard.writeText(draft.whatsapp_text)
+      setCopied(`wa-${draft.id}`)
+      setTimeout(() => setCopied(null), 2000)
+    } catch {
+      alert('Failed to copy. Please try again.')
     }
   }
 
@@ -144,6 +193,47 @@ export default function NewsletterManager() {
         </div>
       </div>
 
+      <div className="bg-white rounded-2xl shadow-sm p-6 mb-8">
+        <h2 className="font-heading font-bold text-dark mb-1 flex items-center gap-2">
+          <MousePointerClick size={18} className="text-primary" />
+          Advertiser clicks
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">
+          Week of {weekOf}. This is the weekly number promised to Tier 1 and Tier 2.
+        </p>
+        {clicks.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            No clicks recorded for this edition yet.
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wider text-gray-500">
+                <th className="pb-2 font-bold">Advertiser</th>
+                <th className="pb-2 font-bold text-right">Email</th>
+                <th className="pb-2 font-bold text-right">Web</th>
+                <th className="pb-2 font-bold text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clicks.map((row) => (
+                <tr key={row.id} className="border-t border-gray-100">
+                  <td className="py-2 font-semibold text-dark">
+                    {row.name}
+                    {row.adType && (
+                      <span className="ml-2 text-xs font-normal text-gray-400">{row.adType}</span>
+                    )}
+                  </td>
+                  <td className="py-2 text-right tabular-nums">{row.email}</td>
+                  <td className="py-2 text-right tabular-nums">{row.web}</td>
+                  <td className="py-2 text-right tabular-nums font-bold">{row.total}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
       {genError && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-6">
           {genError}
@@ -192,6 +282,15 @@ export default function NewsletterManager() {
                   {copied === draft.id ? <CheckCircle2 size={16} className="text-green-500" /> : <Copy size={16} />}
                   {copied === draft.id ? 'Copied!' : 'Copy HTML'}
                 </button>
+                {draft.whatsapp_text && (
+                  <button
+                    onClick={() => handleCopyWhatsapp(draft)}
+                    className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-500 hover:text-primary rounded-lg hover:bg-primary/5 transition-colors"
+                  >
+                    {copied === `wa-${draft.id}` ? <CheckCircle2 size={16} className="text-green-500" /> : <MessageCircle size={16} />}
+                    {copied === `wa-${draft.id}` ? 'Copied!' : 'Copy WhatsApp text'}
+                  </button>
+                )}
                 {draft.status !== 'sent' && (
                   <button
                     onClick={() => handleMarkSent(draft.id)}

@@ -11,6 +11,8 @@ const Events = lazy(() => import('./pages/Events'))
 const EventPage = lazy(() => import('./pages/EventPage'))
 const Gallery = lazy(() => import('./pages/Gallery'))
 const WhatsOn = lazy(() => import('./pages/WhatsOn'))
+const WhatsOnEdition = lazy(() => import('./pages/WhatsOnEdition'))
+const Advertise = lazy(() => import('./pages/Advertise'))
 const Volunteers = lazy(() => import('./pages/Volunteers'))
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'))
 const GdprPolicy = lazy(() => import('./pages/GdprPolicy'))
@@ -51,8 +53,13 @@ function App() {
             <Route path="/events" element={<Events />} />
             <Route path="/events/:slug" element={<EventPage />} />
             <Route path="/whats-on" element={<WhatsOn />} />
+            {/* The dated edition. A separate page from the browser above, not a
+                variant of it: this is the week you read, that is the tool you
+                search. The date is what makes a shared link keep meaning. */}
+            <Route path="/whats-on/:date" element={<WhatsOnEdition />} />
             <Route path="/gallery" element={<Gallery />} />
             <Route path="/volunteers" element={<Volunteers />} />
+            <Route path="/advertise" element={<Advertise />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/gdpr-policy" element={<GdprPolicy />} />
             <Route path="/safeguarding-policy" element={<SafeguardingPolicy />} />

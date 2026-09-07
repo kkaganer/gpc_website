@@ -243,6 +243,7 @@ export type AdvertiserData = {
   event_url?: string
   image_url?: string
   is_brand_sponsor?: boolean
+  logo_bg?: string
   ad_type?: string
 }
 
@@ -297,6 +298,102 @@ const DAY_NAMES_LONG = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 export { SE_LONDON_AREAS, DAY_NAMES_LONG }
 
 // ---------- Pure utilities ----------
+
+/** Supporter logo tile, in CSS px. Logos are normalised to this at upload
+ *  (see src/lib/logoNormalise.js), so the renderer can state both dimensions. */
+export const SUPPORTER_LOGO = { width: 260, height: 160 }
+
+// ---------- WhatsApp ----------
+
+/** WhatsApp shows a "Read more" fold past roughly this many characters. */
+export const WHATSAPP_MAX = 1000
+
+const SITE_URL = 'https://gpccommunity.co.uk'
+
+/**
+ * Strip anything WhatsApp cannot render.
+ *
+ * WhatsApp supports *bold*, _italic_, ~strike~ and monospace. Not HTML, not
+ * markdown links. Anything else arrives as literal punctuation, so entities are
+ * decoded back to characters rather than left as &amp;.
+ */
+export function toPlainText(input: unknown): string {
+  return String(input ?? '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&[a-z]+;/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Build the pasteable WhatsApp message for an edition.
+ *
+ * Deliberately short: its whole job is to earn the tap through to the edition
+ * page, where the full list and every outbound link live. Highlights are named
+ * rather than listed so the message survives the fold on a phone.
+ */
+export function renderWhatsapp(
+  config: NewsletterConfig,
+  resolved: ResolvedData,
+  opts: { siteUrl?: string; eventCount?: number } = {},
+): string {
+  const site = opts.siteUrl || SITE_URL
+  const weekOf = config?.metadata?.weekOf || ''
+  const url = weekOf ? `${site}/whats-on/${weekOf}` : `${site}/whats-on`
+
+  const events: EventData[] = []
+  for (const list of Object.values(resolved?.autoEventsByBlockId || {})) {
+    for (const ev of list || []) {
+      if (!ev?.excluded && ev?.title) events.push(ev)
+    }
+  }
+  for (const ev of Object.values(resolved?.events || {})) {
+    if (!ev?.excluded && ev?.title) events.push(ev)
+  }
+
+  const seen = new Set<string>()
+  const names: string[] = []
+  for (const ev of events) {
+    const t = toPlainText(ev.title)
+    if (!t || seen.has(t)) continue
+    seen.add(t)
+    if (names.length < 4) names.push(t)
+  }
+
+  const total = Number.isInteger(opts.eventCount) ? opts.eventCount : seen.size
+  const countPhrase = total && total > 0
+    ? `${total} things for families in Greenwich`
+    : 'This week for families in Greenwich'
+
+  const highlights = names.length
+    ? ` \u2014 ${names.slice(0, -1).join(', ')}${names.length > 1 ? ' and ' : ''}${names[names.length - 1]}`
+    : ''
+
+  const lines = [
+    `*What's On this week*`,
+    '',
+    `${countPhrase}${highlights}.`,
+    '',
+    `Full guide: ${url}`,
+  ]
+
+  let out = lines.join('\n')
+  if (out.length > WHATSAPP_MAX) {
+    // Trim the highlight sentence, never the link -- the link is the point.
+    const tail = `.\n\nFull guide: ${url}`
+    const head = `*What's On this week*\n\n${countPhrase}`
+    const room = WHATSAPP_MAX - head.length - tail.length
+    const trimmed = room > 0 ? highlights.slice(0, room).replace(/[,\s\u2014]+$/, '') : ''
+    out = `${head}${trimmed}${tail}`
+  }
+  return out
+}
 
 export function escapeHtml(str: unknown): string {
   if (str === null || str === undefined) return ''
@@ -593,7 +690,54 @@ export function createRenderers(
   </td></tr>`
   }
 
-  function renderPresentingBlock(block: PresentingBlock, advertiserIn: AdvertiserData | null): string {
+  // Paid slots link through the click counter rather than straight at the
+  // advertiser, so the weekly count promised in the rate card exists. Twin of
+  // `clickUrl` in api/click.js -- edge functions cannot import from api/, so it
+  // is duplicated on purpose. If one changes, change the other.
+  function trackedUrl(rawUrl: string, advertiserId: string | undefined, editionDate: string): string {
+    // No id means nothing to attribute a click to, so link straight through
+    // rather than bouncing the reader via a counter that cannot count.
+    if (!rawUrl || !advertiserId) return rawUrl
+    const params = new URLSearchParams({ id: advertiserId, source: 'email' })
+    if (editionDate) params.set('date', editionDate)
+    return `${B.websiteUrl.replace(/\/$/, '')}/click?${params.toString()}`
+  }
+
+  // The unsold presenting slot. Same width and same pink rule as the sold card,
+  // dashed rather than solid so it reads as an offer rather than a placeholder.
+  // Deliberately image-free: a stock photo here would compete with the picks
+  // below it, and there is no advertiser whose photo it could honestly be.
+  function renderPresentingHouseAd(): string {
+    const month = new Date().toLocaleDateString('en-GB', { month: 'long' })
+    const subject = encodeURIComponent(`Advertising in the What's On Guide`)
+    return `
+  <tr><td style="padding:0;background-color:${C.page};">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${C.page}" style="background-color:${C.page};border-top:3px dashed ${C.pink};">
+      <tr><td align="center" style="padding:22px 24px 6px 24px;">
+        <p style="margin:0;font-family:${F.body};font-size:11px;line-height:1.2;letter-spacing:1px;text-transform:uppercase;color:${C.pink};font-weight:bold;">This space</p>
+      </td></tr>
+      <tr><td align="center" style="padding:6px 24px 0 24px;">
+        <h3 style="margin:0;font-family:${F.heading};font-size:24px;line-height:1.25;color:${C.purple};font-weight:bold;">Want to feature your business?</h3>
+      </td></tr>
+      <tr><td align="center" style="padding:10px 24px 0 24px;">
+        <p style="margin:0;font-family:${F.body};font-size:15px;line-height:1.55;color:${C.body};text-align:center;">One business per edition reaches 1,800+ Greenwich parents right here.</p>
+      </td></tr>
+      <tr><td align="center" style="padding:18px 24px 26px 24px;">
+        <!--[if mso]>
+        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="mailto:${B.newsEmail}?subject=${subject}" style="v-text-anchor:middle;width:220px;height:44px;" arcsize="20%" strokecolor="${C.pink}" fillcolor="${C.page}">
+          <w:anchorlock/>
+          <center style="color:#d1067f;font-family:arial,sans-serif;font-size:15px;font-weight:bold;">Talk to us about ${month}</center>
+        </v:roundrect>
+        <![endif]-->
+        <!--[if !mso]><!-- -->
+        <a href="mailto:${B.newsEmail}?subject=${subject}" style="display:inline-block;background-color:${C.page};color:#d1067f;border:2px solid ${C.pink};font-family:${F.body};font-size:15px;font-weight:bold;text-decoration:none;padding:11px 22px;border-radius:8px;mso-hide:all;">Talk to us about ${month} &rarr;</a>
+        <!--<![endif]-->
+      </td></tr>
+    </table>
+  </td></tr>`
+  }
+
+  function renderPresentingBlock(block: PresentingBlock, advertiserIn: AdvertiserData | null, editionDate = ''): string {
     if (!block.enabled) return ''
     // Merge overrides on top of the resolved advertiser
     const advertiser: AdvertiserData | null = advertiserIn
@@ -601,11 +745,14 @@ export function createRenderers(
       : block.overrides && Object.keys(block.overrides).length > 0
         ? (block.overrides as AdvertiserData)
         : null
-    if (!advertiser) return ''
+    // An unsold slot is GPC's own invitation at the same footprint, never a gap.
+    // Collapsing it made a quiet week look like a broken template, and it threw
+    // away the one placement most likely to sell the next one.
+    if (!advertiser) return renderPresentingHouseAd()
 
     const advertiserName = escapeHtml(advertiser.advertiser_name || '')
     const description = escapeHtml(advertiser.event_description || '')
-    const websiteUrl = advertiser.event_url || ''
+    const websiteUrl = trackedUrl(advertiser.event_url || '', advertiser.id, editionDate)
     const isBrand = Boolean(advertiser.is_brand_sponsor)
 
     const headline = isBrand
@@ -744,26 +891,52 @@ export function createRenderers(
   </td></tr>`
   }
 
-  function renderSupporterBlock(block: SupporterBlock, advertiserIn: AdvertiserData | null): string {
+  // The unsold supporter slot. Smaller than the presenting house ad on purpose:
+  // it is a smaller offer, and two identical full-width pitches in one email
+  // would read as begging rather than inviting.
+  function renderSupporterHouseTile(): string {
+    const subject = encodeURIComponent(`Supporting the What's On Guide`)
+    return `
+  <tr><td style="padding:20px 20px 24px 20px;background-color:${C.page};">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:2px dashed ${C.pink};border-radius:8px;">
+      <tr><td align="center" style="padding:20px 18px;">
+        <p style="margin:0;font-family:${F.body};font-size:11px;line-height:1.2;letter-spacing:1px;text-transform:uppercase;color:${C.pink};font-weight:bold;">Spaces left this week</p>
+        <p style="margin:8px 0 0 0;font-family:${F.heading};font-size:19px;line-height:1.3;color:${C.purple};font-weight:bold;">Put your logo in front of local parents</p>
+        <p style="margin:12px 0 0 0;font-family:${F.body};font-size:15px;line-height:1.5;color:${C.body};">
+          <a href="mailto:${B.newsEmail}?subject=${subject}" style="color:#d1067f;text-decoration:underline;font-weight:bold;">Talk to us about supporting the guide &rarr;</a>
+        </p>
+      </td></tr>
+    </table>
+  </td></tr>`
+  }
+
+  function renderSupporterBlock(block: SupporterBlock, advertiserIn: AdvertiserData | null, editionDate = ''): string {
     if (!block.enabled) return ''
     const advertiser: AdvertiserData | null = advertiserIn
       ? { ...advertiserIn, ...(block.overrides || {}) }
       : block.overrides && Object.keys(block.overrides).length > 0
         ? (block.overrides as AdvertiserData)
         : null
-    if (!advertiser) return ''
+    // Same rule as the presenting slot: an unsold supporter slot is an offer at
+    // the same footprint, not a missing section.
+    if (!advertiser) return renderSupporterHouseTile()
 
     const name = escapeHtml(advertiser.advertiser_name || 'our supporter')
     const quote = advertiser.event_description ? escapeHtml(advertiser.event_description) : ''
-    const linkUrl = advertiser.event_url || '#'
+    const linkUrl = trackedUrl(advertiser.event_url || '', advertiser.id, editionDate) || '#'
     const emailHref = advertiser.contact_email
       ? `mailto:${advertiser.contact_email}?subject=I%20saw%20your%20ad%20in%20the%20GPC%20What's%20On%20Guide`
       : '#'
 
+    // Both width and height are explicit: logos are normalised to SUPPORTER_LOGO
+    // at upload, so height:auto would only reintroduce the uneven-row problem.
+    // The plate is also the td's bgcolor, so a blocked image (Gmail's default on
+    // first open) degrades to a tidy tile carrying the alt text, not a broken icon.
+    const plate = escapeHtml(advertiser.logo_bg || '#ffffff')
     const logo = advertiser.image_url
-      ? `<tr><td align="center" style="padding:10px 0 12px 0;">
+      ? `<tr><td align="center" bgcolor="${plate}" style="padding:10px 0 12px 0;background-color:${plate};">
         <a href="${escapeHtml(linkUrl)}" target="_blank" style="text-decoration:none;">
-          <img src="${escapeHtml(advertiser.image_url)}" width="169" alt="${name}" style="display:block;width:169px;max-width:169px;height:auto;border:0;outline:none;text-decoration:none;border-radius:8px;margin:0 auto;"${editAttr(block.id, 'image_url')}>
+          <img src="${escapeHtml(advertiser.image_url)}" width="${SUPPORTER_LOGO.width}" height="${SUPPORTER_LOGO.height}" alt="${name}" style="display:block;width:${SUPPORTER_LOGO.width}px;max-width:${SUPPORTER_LOGO.width}px;height:${SUPPORTER_LOGO.height}px;border:0;outline:none;text-decoration:none;border-radius:8px;margin:0 auto;"${editAttr(block.id, 'image_url')}>
         </a>
       </td></tr>`
       : ''
@@ -922,7 +1095,7 @@ export function createRenderers(
           block.mode === 'manual' && block.advertiserId
             ? resolved.advertisers[block.advertiserId] || null
             : resolved.autoAdvertiserByBlockId[block.id] || null
-        return renderPresentingBlock(block, advertiser)
+        return renderPresentingBlock(block, advertiser, metadata.weekOf)
       }
       case 'donationStrip':
         return renderDonationStripBlock(block)
@@ -942,7 +1115,7 @@ export function createRenderers(
           block.mode === 'manual' && block.advertiserId
             ? resolved.advertisers[block.advertiserId] || null
             : resolved.autoAdvertiserByBlockId[block.id] || null
-        return renderSupporterBlock(block, advertiser)
+        return renderSupporterBlock(block, advertiser, metadata.weekOf)
       }
       case 'footer':
         return renderFooterBlock(block)

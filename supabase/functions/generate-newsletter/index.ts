@@ -15,6 +15,7 @@ import {
   Block,
   EventData,
   AdvertiserData,
+  renderWhatsapp,
 } from '../_shared/newsletter-renderer.ts'
 
 const corsHeaders = {
@@ -283,6 +284,7 @@ Deno.serve(async (req) => {
     // Render
     const { renderNewsletter } = createRenderers(config.theme)
     const htmlContent = renderNewsletter(config, resolved)
+    const whatsappText = renderWhatsapp(config, resolved)
 
     // Persist as draft
     const title = `GPC Newsletter - Week of ${config.metadata.weekOf}`
@@ -291,6 +293,7 @@ Deno.serve(async (req) => {
       .insert({
         title,
         content_html: htmlContent,
+        whatsapp_text: whatsappText,
         content_json: {
           version: 2,
           config,

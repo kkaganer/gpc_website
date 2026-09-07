@@ -1,8 +1,56 @@
 import { useState } from 'react'
 import { Upload, X } from 'lucide-react'
 import { uploadEventImage } from '../../hooks/useEventMutations'
+import { fitBox, SUPPORTER_TILE } from '../../lib/logoNormalise'
 
-export default function ImageUpload({ value, onChange }) {
+/** Canvas draws at 2x so the tile is crisp on retina. */
+const SCALE = 2
+
+/**
+ * Flatten a logo onto a solid plate at a fixed size.
+ *
+ * Baking the plate into the pixels rather than applying it in CSS is deliberate:
+ * it survives dark-mode inversion in Apple Mail and Outlook.com, which a
+ * transparent PNG does not.
+ */
+async function normaliseToPlate(file, plate, tile) {
+  const bitmap = await createImageBitmap(file)
+  const canvas = document.createElement('canvas')
+  canvas.width = tile.width * SCALE
+  canvas.height = tile.height * SCALE
+
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = plate
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  const box = fitBox({
+    srcW: bitmap.width,
+    srcH: bitmap.height,
+    tileW: tile.width,
+    tileH: tile.height,
+  })
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(
+    bitmap,
+    box.x * SCALE,
+    box.y * SCALE,
+    box.width * SCALE,
+    box.height * SCALE,
+  )
+  bitmap.close?.()
+
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
+  if (!blob) throw new Error('Could not render the logo')
+  return new File([blob], `logo-${Date.now()}.png`, { type: 'image/png' })
+}
+
+export default function ImageUpload({
+  value,
+  onChange,
+  normalise = false,
+  plate = '#ffffff',
+  tile = SUPPORTER_TILE,
+}) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
 
@@ -13,7 +61,13 @@ export default function ImageUpload({ value, onChange }) {
     setError('')
     setUploading(true)
     try {
-      const url = await uploadEventImage(file)
+      // SVGs have no intrinsic bitmap size for createImageBitmap to work from,
+      // so they upload as-is rather than being silently mangled.
+      const shouldNormalise = normalise && file.type !== 'image/svg+xml'
+      const toUpload = shouldNormalise
+        ? await normaliseToPlate(file, plate, tile)
+        : file
+      const url = await uploadEventImage(toUpload)
       onChange(url)
     } catch (err) {
       setError('Upload failed. Please try again.')
@@ -26,7 +80,12 @@ export default function ImageUpload({ value, onChange }) {
     <div>
       {value ? (
         <div className="relative inline-block">
-          <img src={value} alt="Preview" className="h-32 rounded-lg object-cover" />
+          <img
+            src={value}
+            alt="Preview"
+            className="h-32 rounded-lg"
+            style={{ objectFit: normalise ? 'contain' : 'cover', background: normalise ? plate : undefined }}
+          />
           <button
             type="button"
             onClick={() => onChange('')}

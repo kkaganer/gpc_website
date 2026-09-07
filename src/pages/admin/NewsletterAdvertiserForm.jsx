@@ -11,6 +11,7 @@ const emptyForm = {
   event_description: '',
   event_url: '',
   image_url: '',
+  logo_bg: '#ffffff',
   newsletter_date: '',
   ad_type: 'free-listing',
   status: 'pending',
@@ -63,6 +64,7 @@ export default function NewsletterAdvertiserForm() {
           event_description: data.event_description || '',
           event_url: data.event_url || '',
           image_url: data.image_url || '',
+          logo_bg: data.logo_bg || '#ffffff',
           newsletter_date: data.newsletter_date || '',
           ad_type: data.ad_type || 'free-listing',
           status: data.status || 'pending',
@@ -223,8 +225,34 @@ export default function NewsletterAdvertiserForm() {
 
         <div className="block">
           <span className="text-sm font-semibold text-dark">Image / Logo</span>
-          <p className="text-xs text-gray-500 mb-2">Shown in the newsletter's Presenting or Supporter block.</p>
-          <ImageUpload value={form.image_url} onChange={(url) => set('image_url', url)} />
+          <p className="text-xs text-gray-500 mb-2">
+            Shown in the newsletter&apos;s Presenting or Supporter block. Logo sponsors are
+            flattened onto the plate colour at a fixed size, so every logo in the row matches.
+          </p>
+          <ImageUpload
+            value={form.image_url}
+            onChange={(url) => set('image_url', url)}
+            normalise={form.ad_type === 'logo-sponsor'}
+            plate={form.logo_bg}
+          />
+          {form.ad_type === 'logo-sponsor' && (
+            <div className="mt-3 flex items-center gap-3">
+              <input
+                type="color"
+                value={form.logo_bg}
+                onChange={(e) => set('logo_bg', e.target.value)}
+                className="h-9 w-14 rounded-lg border border-gray-200 cursor-pointer"
+                aria-label="Logo plate colour"
+              />
+              <div>
+                <span className="text-sm font-semibold text-dark">Plate colour</span>
+                {/* White artwork on a transparent PNG vanishes on the default white plate. */}
+                <p className="text-xs text-gray-500">
+                  White suits most logos. Use a dark plate if the artwork is white or very light.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-3 gap-4">

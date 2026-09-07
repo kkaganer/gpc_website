@@ -11,6 +11,7 @@ const navLinks = [
   { to: '/events', label: 'Our Events' },
   { to: '/whats-on', label: "What's On" },
   { to: '/volunteers', label: 'Volunteers' },
+  { to: '/advertise', label: 'Advertise' },
 ]
 
 function NavItem({ to, label, onClick }) {
