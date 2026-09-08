@@ -13,6 +13,7 @@ import { editionRange } from '../lib/editionGroups'
 // base table -- the base table is authenticated-only and carries contact details.
 export function useEdition(date) {
   const [events, setEvents] = useState([])
+  const [regulars, setRegulars] = useState([])
   const [presenting, setPresenting] = useState(null)
   const [supporters, setSupporters] = useState([])
   const [loading, setLoading] = useState(true)
@@ -44,13 +45,24 @@ export function useEdition(date) {
         .order('date', { ascending: true })
         .order('time', { ascending: true, nullsFirst: false })
 
+      // Weekly drop-ins, which the dated query above cannot reach: a recurring row
+      // carries a day_of_week and no date, so every date filter excludes it. They
+      // used to exist only inside the email, which meant the guide the email points
+      // at was missing the twenty things that happen every single week.
+      const regularsQuery = supabase
+        .from('london_events')
+        .select('*')
+        .eq('approved', true)
+        .eq('is_recurring', true)
+
       const advertisersQuery = supabase
         .from('public_newsletter_advertisers')
         .select('*')
         .eq('newsletter_date', range.from)
 
-      const [eventsResult, advertisersResult] = await Promise.all([
+      const [eventsResult, regularsResult, advertisersResult] = await Promise.all([
         eventsQuery,
+        regularsQuery,
         advertisersQuery,
       ])
 
@@ -59,11 +71,16 @@ export function useEdition(date) {
       if (eventsResult.error) {
         setError(eventsResult.error.message)
         setEvents([])
+        setRegulars([])
         setLoading(false)
         return
       }
 
       setEvents(eventsResult.data || [])
+
+      // Regulars failing is not fatal for the same reason advertisers are not: the
+      // dated listings are the page, and a week without the drop-ins still reads.
+      setRegulars(regularsResult.error ? [] : regularsResult.data || [])
 
       // Advertisers failing is not fatal: the guide is the point of the page, and
       // the slots have unsold states that render perfectly well with nothing in
@@ -85,5 +102,5 @@ export function useEdition(date) {
     }
   }, [date])
 
-  return { events, presenting, supporters, loading, error }
+  return { events, regulars, presenting, supporters, loading, error }
 }

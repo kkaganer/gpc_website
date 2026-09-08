@@ -1,16 +1,21 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router'
-import { Sparkles, Copy, CheckCircle2, Trash2, Pencil, MessageCircle, MousePointerClick } from 'lucide-react'
+import {
+  Sparkles,
+  Copy,
+  CheckCircle2,
+  Trash2,
+  Pencil,
+  MessageCircle,
+  MousePointerClick,
+  AlertTriangle,
+} from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import ConfirmModal from '../../components/ui/ConfirmModal'
-
-function nearestFriday() {
-  const d = new Date()
-  const dow = d.getDay()
-  const daysUntilFriday = (5 - dow + 7) % 7
-  d.setDate(d.getDate() + daysUntilFriday)
-  return d.toISOString().split('T')[0]
-}
+// Was a third local copy of this, with the same local-parse / UTC-serialise slip
+// the shared one had. One implementation now, so the date the draft is generated
+// for and the date the email prints cannot drift apart.
+import { nearestFriday, todayIso } from '../../../supabase/functions/_shared/newsletter-renderer'
 
 export default function NewsletterManager() {
   const [drafts, setDrafts] = useState([])
@@ -22,8 +27,9 @@ export default function NewsletterManager() {
   const [introMessage, setIntroMessage] = useState(
     "Hey folks! Every week I spend a couple of hours making this newsletter. I want to provide stuff that's useful to you, so let me know if you have feedback"
   )
-  const [weekOf, setWeekOf] = useState(nearestFriday())
+  const [weekOf, setWeekOf] = useState(nearestFriday(todayIso()))
   const [clicks, setClicks] = useState([])
+  const [slots, setSlots] = useState({ presenting: [], supporters: [] })
 
   useEffect(() => {
     document.title = 'Newsletter | GPC Admin'
@@ -63,6 +69,32 @@ export default function NewsletterManager() {
       setClicks([...byAdvertiser.values()].sort((a, b) => b.total - a.total))
     }
     fetchClicks()
+    return () => {
+      cancelled = true
+    }
+  }, [weekOf])
+
+  // What is actually booked for this week, so the slots can be checked BEFORE the
+  // newsletter is generated. The presenting slot holds exactly one card, so a
+  // second featured-ad sold for the same date is a placement somebody paid for
+  // that cannot appear -- and nothing anywhere else would have said so.
+  useEffect(() => {
+    let cancelled = false
+    async function fetchSlots() {
+      const { data, error } = await supabase
+        .from('newsletter_advertisers')
+        .select('id, advertiser_name, ad_type')
+        .eq('newsletter_date', weekOf)
+        .in('status', ['confirmed', 'included'])
+        .order('created_at', { ascending: true })
+      if (cancelled) return
+      const rows = error ? [] : data || []
+      setSlots({
+        presenting: rows.filter((r) => r.ad_type === 'featured-ad'),
+        supporters: rows.filter((r) => r.ad_type === 'logo-sponsor'),
+      })
+    }
+    fetchSlots()
     return () => {
       cancelled = true
     }
@@ -187,6 +219,32 @@ export default function NewsletterManager() {
             />
             <p className="text-xs text-gray-500 mt-1">Used to match advertisers tagged for this date.</p>
           </label>
+          <div className="text-xs text-gray-600 max-w-xs space-y-2 self-end pb-1">
+            <div>
+              Booked for this week:{' '}
+              <strong>
+                {slots.presenting.length} presenting, {slots.supporters.length}{' '}
+                {slots.supporters.length === 1 ? 'logo' : 'logos'}
+              </strong>
+              .
+            </div>
+            {slots.presenting.length > 1 && (
+              <div className="flex gap-2 items-start rounded-lg bg-amber-50 border border-amber-200 p-2 leading-snug text-amber-900">
+                <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                <span>
+                  The presenting slot holds one card, but {slots.presenting.length} are booked:{' '}
+                  {slots.presenting.map((a) => a.advertiser_name).join(', ')}.{' '}
+                  <strong>{slots.presenting[0].advertiser_name}</strong> will print and the rest
+                  will not. Move the others to another week.
+                </span>
+              </div>
+            )}
+            {slots.presenting.length === 0 && (
+              <div className="text-gray-500 leading-snug">
+                No presenting sponsor, so that slot prints GPC&apos;s own invitation.
+              </div>
+            )}
+          </div>
           <button
             onClick={handleGenerate}
             disabled={generating}

@@ -13,10 +13,30 @@ import {
   MousePointerClick,
   Minus,
   Plus,
+  Trash2,
+  GripVertical,
+  AlertTriangle,
 } from 'lucide-react'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { supabase } from '../../lib/supabase'
 import {
   createRenderers,
+  renderWhatsapp,
   DEFAULT_COLORS,
   nearestFriday,
 } from '../../../supabase/functions/_shared/newsletter-renderer'
@@ -24,6 +44,7 @@ import { defaultConfig, uid } from '../../lib/newsletter/defaults'
 import { resolveDataForConfig } from '../../lib/newsletter/resolveData'
 import EventOverrideCard from '../../components/admin/newsletter/EventOverrideCard'
 import AdvertiserOverrideCard from '../../components/admin/newsletter/AdvertiserOverrideCard'
+import ConfirmModal from '../../components/ui/ConfirmModal'
 
 // ---------- Reducer ----------
 
@@ -214,7 +235,8 @@ const BLOCK_LABELS = {
   presenting: 'Presenting sponsor',
   donationStrip: 'Donation bar',
   regulars: 'Regular activities',
-  supporter: 'Supporter spotlight',
+  supporter: 'Supporter logos',
+  editionCta: 'Button to the guide',
   footer: 'Footer',
   textBlock: 'Text block',
   imageBlock: 'Image block',
@@ -354,9 +376,14 @@ export default function NewsletterSectionEditor() {
     setSaveError('')
     try {
       const title = `GPC Newsletter - Week of ${state.config.metadata.weekOf}`
+      // Regenerated on every save, not just at Generate. The WhatsApp message
+      // names the week's highlights and carries the event count, so a draft that
+      // was edited -- picks swapped, week changed -- used to be posted alongside a
+      // message describing the version before the edit.
       const payload = {
         title,
         content_html: cleanHtml,
+        whatsapp_text: renderWhatsapp(state.config, state.resolvedData),
         content_json: {
           version: 2,
           config: state.config,
@@ -416,6 +443,9 @@ export default function NewsletterSectionEditor() {
         break
       case 'divider':
         block = { ...base, style: 'solid' }
+        break
+      case 'editionCta':
+        block = { ...base }
         break
       default:
         return
@@ -483,10 +513,12 @@ export default function NewsletterSectionEditor() {
         {/* Left: section sidebar */}
         <SectionSidebar
           config={state.config}
+          resolvedData={state.resolvedData}
           selectedBlockId={state.selectedBlockId}
           onSelect={(blockId) => dispatch({ type: 'SELECT_BLOCK', blockId })}
           onToggle={(blockId) => dispatch({ type: 'TOGGLE_BLOCK', blockId })}
           onRemove={(blockId) => dispatch({ type: 'REMOVE_BLOCK', blockId })}
+          onReorder={(blocks) => dispatch({ type: 'REORDER_BLOCKS', blocks })}
           onAddBlock={handleAddBlock}
         />
 
@@ -544,7 +576,142 @@ export default function NewsletterSectionEditor() {
 
 // ---------- Section sidebar ----------
 
-function SectionSidebar({ config, selectedBlockId, onSelect, onToggle, onRemove, onAddBlock }) {
+// What a block is worth in money, so the sidebar can say so before it is removed.
+// Deleting or switching off a slot that somebody has paid for is the one mistake
+// in this editor that cannot be fixed after the send.
+function paidBooking(block, resolvedData) {
+  if (!resolvedData) return null
+  if (block.type === 'presenting') {
+    const adv = resolvedData.autoAdvertiserByBlockId?.[block.id]
+    return adv ? { count: 1, names: [adv.advertiser_name || 'an advertiser'] } : null
+  }
+  if (block.type === 'supporter') {
+    const list = resolvedData.autoAdvertisersByBlockId?.[block.id] || []
+    if (list.length === 0) return null
+    return { count: list.length, names: list.map((a) => a.advertiser_name || 'an advertiser') }
+  }
+  return null
+}
+
+function SortableBlockRow({ block, selected, booking, onSelect, onToggle, onRemove }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: block.id,
+  })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`group flex items-center gap-1 pr-1 rounded-lg transition-colors ${
+        selected ? 'bg-primary/10' : 'hover:bg-gray-50'
+      } ${!block.enabled ? 'opacity-50' : ''}`}
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        aria-label={`Reorder ${blockLabel(block)}`}
+        className="flex-shrink-0 pl-1.5 py-2 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing touch-none focus:outline-none focus:ring-2 focus:ring-primary rounded"
+      >
+        <GripVertical size={14} />
+      </button>
+      <button
+        type="button"
+        onClick={() => onSelect(block.id)}
+        className={`flex-1 min-w-0 flex items-center gap-1.5 py-2 text-sm text-left ${
+          selected ? 'text-primary font-semibold' : 'text-gray-700'
+        }`}
+      >
+        <span className="flex-1 truncate">{blockLabel(block)}</span>
+        {booking && (
+          <span
+            title={`Paid: ${booking.names.join(', ')}`}
+            className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800"
+          >
+            £{booking.count > 1 ? ` ${booking.count}` : ''}
+          </span>
+        )}
+      </button>
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggle(block.id)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            e.stopPropagation()
+            onToggle(block.id)
+          }
+        }}
+        title={block.enabled ? 'Showing in this newsletter' : 'Hidden from this newsletter'}
+        className={`flex-shrink-0 cursor-pointer text-[10px] px-1.5 py-0.5 rounded ${
+          block.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+        }`}
+      >
+        {block.enabled ? 'ON' : 'OFF'}
+      </span>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onRemove(block)
+        }}
+        aria-label={`Remove ${blockLabel(block)}`}
+        title="Remove this block"
+        className="flex-shrink-0 p-1 rounded text-gray-300 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-600 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-400"
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
+  )
+}
+
+function SectionSidebar({
+  config,
+  resolvedData,
+  selectedBlockId,
+  onSelect,
+  onToggle,
+  onRemove,
+  onReorder,
+  onAddBlock,
+}) {
+  // A small activation distance so a click on the handle still selects rather
+  // than starting a drag the moment the pointer moves a pixel. The keyboard
+  // sensor is not decoration: reordering by mouse only would make the block order
+  // unreachable without one, and it is the only way to test this without a real
+  // pointer. Space picks a block up, arrows move it, Space drops it.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  function handleDragEnd(event) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const from = config.blocks.findIndex((b) => b.id === active.id)
+    const to = config.blocks.findIndex((b) => b.id === over.id)
+    if (from === -1 || to === -1) return
+    onReorder(arrayMove(config.blocks, from, to))
+  }
+
+  // Deliberately a confirm and not an undo: removing a block throws away every
+  // per-item override typed into it, and there is nothing to restore it from.
+  const [pendingRemoval, setPendingRemoval] = useState(null)
+  const pendingBooking = pendingRemoval ? paidBooking(pendingRemoval, resolvedData) : null
+
+  const paidBlocks = config.blocks
+    .filter((b) => b.enabled === false && paidBooking(b, resolvedData))
+    .map((b) => blockLabel(b))
+
   return (
     <aside className="w-64 border-r border-gray-200 bg-white overflow-y-auto flex flex-col">
       <div className="p-4 border-b border-gray-100">
@@ -563,32 +730,39 @@ function SectionSidebar({ config, selectedBlockId, onSelect, onToggle, onRemove,
       </div>
       <div className="p-4 border-b border-gray-100 flex-1">
         <h2 className="text-xs uppercase tracking-wider font-bold text-gray-500 mb-2">Sections</h2>
-        <div className="space-y-1">
-          {config.blocks.map((block) => (
-            <button
-              key={block.id}
-              onClick={() => onSelect(block.id)}
-              className={`w-full group flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
-                selectedBlockId === block.id
-                  ? 'bg-primary/10 text-primary font-semibold'
-                  : 'text-gray-700 hover:bg-gray-50'
-              } ${!block.enabled ? 'opacity-50' : ''}`}
-            >
-              <span className="flex-1 truncate">{blockLabel(block)}</span>
-              <span
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onToggle(block.id)
-                }}
-                className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded ${
-                  block.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                }`}
-              >
-                {block.enabled ? 'ON' : 'OFF'}
-              </span>
-            </button>
-          ))}
-        </div>
+        {paidBlocks.length > 0 && (
+          <div className="mb-2 flex gap-2 items-start rounded-lg bg-amber-50 border border-amber-200 p-2 text-[11px] leading-snug text-amber-900">
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+            <span>
+              {paidBlocks.join(' and ')} {paidBlocks.length === 1 ? 'is' : 'are'} switched off, but
+              somebody has paid for {paidBlocks.length === 1 ? 'that slot' : 'those slots'} this week.
+            </span>
+          </div>
+        )}
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext
+            items={config.blocks.map((b) => b.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-0.5">
+              {config.blocks.map((block) => (
+                <SortableBlockRow
+                  key={block.id}
+                  block={block}
+                  selected={selectedBlockId === block.id}
+                  booking={paidBooking(block, resolvedData)}
+                  onSelect={onSelect}
+                  onToggle={onToggle}
+                  onRemove={setPendingRemoval}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+        <p className="text-[11px] text-gray-400 mt-3 leading-snug">
+          Drag the handle to reorder, or focus it and press space then the arrow keys. The email
+          is one column, so this list is the order it arrives in.
+        </p>
       </div>
       <div className="p-4 border-t border-gray-100">
         <h2 className="text-xs uppercase tracking-wider font-bold text-gray-500 mb-2">Add block</h2>
@@ -597,8 +771,33 @@ function SectionSidebar({ config, selectedBlockId, onSelect, onToggle, onRemove,
           <AddBlockButton icon={ImageIcon} label="Image" onClick={() => onAddBlock('imageBlock')} />
           <AddBlockButton icon={MousePointerClick} label="Button" onClick={() => onAddBlock('ctaBlock')} />
           <AddBlockButton icon={Minus} label="Divider" onClick={() => onAddBlock('divider')} />
+          <AddBlockButton
+            icon={MousePointerClick}
+            label="Guide button"
+            onClick={() => onAddBlock('editionCta')}
+          />
         </div>
       </div>
+      {pendingRemoval && (
+        <ConfirmModal
+          title={`Remove ${blockLabel(pendingRemoval)}?`}
+          message={
+            pendingBooking
+              ? `${
+                  pendingBooking.count === 1
+                    ? 'This slot is sold to'
+                    : `${pendingBooking.count} paid logos sit in this block:`
+                } ${pendingBooking.names.join(', ')}. Removing it takes them out of the edition they paid for. To hide it just for this week, use OFF instead.`
+              : 'This takes the block out of the newsletter along with any wording you have changed inside it. To hide it without losing that, use OFF instead.'
+          }
+          confirmLabel="Remove"
+          onConfirm={() => {
+            onRemove(pendingRemoval.id)
+            setPendingRemoval(null)
+          }}
+          onCancel={() => setPendingRemoval(null)}
+        />
+      )}
     </aside>
   )
 }
@@ -618,17 +817,16 @@ function AddBlockButton({ icon: Icon, label, onClick }) {
 // ---------- Theme editor ----------
 
 const THEME_LABELS = {
-  pink: 'Primary accent (pink)',
-  blue: 'Link / button (blue)',
-  skyBlue: 'Section headings',
-  lavender: 'Featured card bg',
-  butter: 'GPC highlight',
-  paleBlue: 'Donation strip',
-  purple: 'Supporter button',
-  footer: 'Footer background',
-  dark: 'Dark text',
+  pink: 'Brand pink (fills & rules)',
+  pinkText: 'Pink text & links',
+  dark: 'Headings & dark cards',
+  page: 'Page background',
+  card: 'Card background',
   body: 'Body text',
-  muted: 'Muted text',
+  muted: 'Meta text',
+  hairline: 'Card borders',
+  green: 'FREE badge',
+  footer: 'Footer background',
 }
 
 function ThemeEditor({ theme, onChange, onReset }) {
@@ -638,6 +836,10 @@ function ThemeEditor({ theme, onChange, onReset }) {
         <h2 className="font-heading text-lg font-bold text-dark">Theme &amp; colours</h2>
         <p className="text-xs text-gray-500 mt-1">
           These changes only apply to this newsletter. Each new newsletter starts fresh from the defaults.
+        </p>
+        <p className="text-xs text-gray-500 mt-2">
+          Brand pink is for fills and rules. It is 3.6:1 on white, so anything pink that
+          has to be <em>read</em> uses the darker pink instead.
         </p>
       </div>
       <div className="space-y-3">
@@ -785,8 +987,13 @@ function BlockFields({ block, resolvedData, focusRequest, onChange, onOverrideCh
         </div>
       )
     case 'eventSection': {
-      const events =
-        (resolvedData?.autoEventsByBlockId?.[block.id] || [])
+      const all = resolvedData?.autoEventsByBlockId?.[block.id] || []
+      const isPicks = block.layout === 'picks'
+      const limit = Number.isInteger(block.limit) && block.limit > 0 ? block.limit : 0
+      // Show exactly what will be printed, in order, so the numbers beside the
+      // cards in the preview match the cards in this panel.
+      const events = limit ? all.slice(0, limit) : all
+      const hidden = all.length - events.length
       return (
         <div className="space-y-3">
           <label className="block">
@@ -798,10 +1005,49 @@ function BlockFields({ block, resolvedData, focusRequest, onChange, onOverrideCh
               className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
           </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs font-semibold text-gray-700">Layout</span>
+              <select
+                value={block.layout || 'list'}
+                onChange={(e) => onChange({ layout: e.target.value })}
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/50"
+              >
+                <option value="picks">Picks card (numbered)</option>
+                <option value="list">Full list (long form)</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold text-gray-700">Show at most</span>
+              <input
+                type="number"
+                min="0"
+                value={limit || ''}
+                placeholder="All"
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10)
+                  onChange({ limit: Number.isInteger(n) && n > 0 ? n : undefined })
+                }}
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            </label>
+          </div>
+          <p className="text-[11px] text-gray-500 leading-snug">
+            {isPicks
+              ? 'The first pick gets its description; the rest are title and details only. Leave "show at most" blank to print every match.'
+              : 'The long-form list, one paragraph per event. Blank means every match.'}
+          </p>
           <div className="pt-2">
             <div className="text-xs font-semibold text-gray-700 mb-2">
-              Events in this section ({events.length})
+              Events in this section ({events.length}
+              {hidden > 0 ? ` of ${all.length}` : ''})
             </div>
+            {hidden > 0 && (
+              <div className="text-[11px] text-gray-500 bg-gray-100 rounded-lg p-2 mb-2 leading-snug">
+                {hidden} more {hidden === 1 ? 'event matches' : 'events match'} this week and will
+                not be printed. They are all on the guide the button links to.
+              </div>
+            )}
             {events.length === 0 ? (
               <div className="text-xs text-gray-500 bg-gray-100 rounded-lg p-3">
                 No events match this section's filters for the current date range. Add events in <code className="bg-gray-200 px-1 rounded">/admin/whats-on</code> and they will appear here.
@@ -860,6 +1106,15 @@ function BlockFields({ block, resolvedData, focusRequest, onChange, onOverrideCh
     }
     case 'presenting': {
       const advertiser = resolvedData?.autoAdvertiserByBlockId?.[block.id]
+      if (!advertiser) {
+        return (
+          <div className="text-xs text-gray-600 bg-gray-100 rounded-lg p-3 leading-relaxed">
+            No <strong>Featured ad</strong> is booked for this week, so the slot prints GPC&rsquo;s
+            own invitation at the same size &mdash; it is never a gap. Book one in{' '}
+            <code className="bg-gray-200 px-1 rounded">/admin/newsletter-advertisers</code>.
+          </div>
+        )
+      }
       return (
         <AdvertiserOverrideCard
           source={advertiser}
@@ -874,18 +1129,89 @@ function BlockFields({ block, resolvedData, focusRequest, onChange, onOverrideCh
       )
     }
     case 'supporter': {
-      const advertiser = resolvedData?.autoAdvertiserByBlockId?.[block.id]
+      // A list now, not a single advertiser: the block used to render exactly one
+      // logo however many were booked for the week.
+      const supporters = resolvedData?.autoAdvertisersByBlockId?.[block.id] || []
       return (
-        <AdvertiserOverrideCard
-          source={advertiser}
-          override={block.overrides}
-          focusField={activeFocus ? activeFocus.field : null}
-          focusTimestamp={activeFocus ? activeFocus.timestamp : undefined}
-          onFieldChange={(field, value) => onOverrideChange({ [field]: value })}
-          onFieldReset={(field) => onOverrideReset(undefined, [field])}
-          onResetAll={() => onOverrideReset()}
-          variant="supporter"
-        />
+        <div className="space-y-3">
+          <label className="block">
+            <span className="text-xs font-semibold text-gray-700">Row heading</span>
+            <input
+              type="text"
+              value={block.heading || ''}
+              placeholder="Supported this week by"
+              onChange={(e) => onChange({ heading: e.target.value })}
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </label>
+          {supporters.length === 0 ? (
+            <div className="text-xs text-gray-600 bg-gray-100 rounded-lg p-3 leading-relaxed">
+              No <strong>Logo sponsor</strong> is booked for this week, so the whole row is left
+              out of the email &mdash; heading, tiles and all.
+            </div>
+          ) : (
+            <>
+              <p className="text-[11px] text-gray-500 leading-snug">
+                {supporters.length} {supporters.length === 1 ? 'logo' : 'logos'}, two to a row. An
+                odd one at the end spans the full width rather than leaving a hole.
+              </p>
+              <div className="space-y-3">
+                {supporters.map((adv) => (
+                  <AdvertiserOverrideCard
+                    key={adv.id}
+                    source={adv}
+                    override={block.overrides?.[adv.id]}
+                    focusField={
+                      activeFocus && activeFocus.itemId === adv.id ? activeFocus.field : null
+                    }
+                    focusTimestamp={
+                      activeFocus && activeFocus.itemId === adv.id ? activeFocus.timestamp : undefined
+                    }
+                    onFieldChange={(field, value) => onOverrideChange({ [field]: value }, adv.id)}
+                    onFieldReset={(field) => onOverrideReset(adv.id, [field])}
+                    onResetAll={() => onOverrideReset(adv.id)}
+                    variant="supporter"
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )
+    }
+    case 'editionCta': {
+      const count = resolvedData?.editionEventCount ?? 0
+      return (
+        <div className="space-y-3">
+          <label className="block">
+            <span className="text-xs font-semibold text-gray-700">Button label</span>
+            <input
+              type="text"
+              value={block.label || ''}
+              placeholder="See all {count} events →"
+              onChange={(e) => onChange({ label: e.target.value })}
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            <span className="text-[11px] text-gray-500 mt-1 block leading-snug">
+              <code className="bg-gray-100 px-1 rounded">{'{count}'}</code> is replaced with the
+              number of things on this week&rsquo;s guide &mdash; currently <strong>{count}</strong>.
+            </span>
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-gray-700">Line underneath</span>
+            <input
+              type="text"
+              value={block.note || ''}
+              placeholder="Times, prices and booking links for every one of them."
+              onChange={(e) => onChange({ note: e.target.value })}
+              className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+          </label>
+          <p className="text-[11px] text-gray-500 leading-snug">
+            Links to the guide for this edition&rsquo;s week. This is the only filled button in
+            the email &mdash; adding a second one costs the first its meaning.
+          </p>
+        </div>
       )
     }
     case 'regulars': {

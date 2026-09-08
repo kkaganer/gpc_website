@@ -24,6 +24,15 @@ const corsHeaders = {
 }
 
 // ---------- Default config builder (for legacy {intro_message, week_of} requests) ----------
+//
+// MIRROR: defaultConfig in src/lib/newsletter/defaults.ts builds the identical
+// block sequence. Change both together, or a draft opened in the editor will not
+// match the one this function produced.
+//
+// The default edition is short on purpose: one paid placement, five picks and a
+// button through to the week's page on the site. The long-form blocks are all
+// still available in the editor; they are simply not what an ordinary week is
+// made of any more.
 
 function makeDefaultConfig(
   todayIso: string,
@@ -42,37 +51,22 @@ function makeDefaultConfig(
     },
     blocks: [
       { id: uid(), type: 'masthead', enabled: true },
-      { id: uid(), type: 'subscribe', enabled: true, label: 'Subscribe', url: '' },
-      { id: uid(), type: 'intro', enabled: true, message: introMessage, signature: '- Aster' },
-      { id: uid(), type: 'featured', enabled: true, mode: 'auto' },
-      {
-        id: uid(),
-        type: 'eventSection',
-        enabled: true,
-        title: 'This Week',
-        mode: 'auto',
-        filter: { source: 'london_events', dateFrom: 0, dateTo: 7, areas: 'se-london' },
-        gotNewsFooter: true,
-      },
+      { id: uid(), type: 'intro', enabled: true, message: introMessage, signature: '— Aster' },
+      // Above the picks: the paid slot is the first thing after the welcome, and
+      // unsold it becomes GPC's own invitation at the same size.
       { id: uid(), type: 'presenting', enabled: true, mode: 'auto' },
       {
         id: uid(),
         type: 'eventSection',
         enabled: true,
-        title: 'Coming up',
+        title: "This week's picks",
+        layout: 'picks',
+        limit: 5,
         mode: 'auto',
-        filter: { source: 'london_events', dateFrom: 8, dateTo: 21, areas: 'se-london' },
+        filter: { source: 'london_events', dateFrom: 0, dateTo: 7, areas: 'se-london' },
       },
-      { id: uid(), type: 'donationStrip', enabled: true },
-      {
-        id: uid(),
-        type: 'eventSection',
-        enabled: true,
-        title: 'Further to travel',
-        mode: 'auto',
-        filter: { source: 'london_events', dateFrom: 0, dateTo: 21, areas: 'outside-se-london' },
-      },
-      { id: uid(), type: 'regulars', enabled: true, mode: 'auto' },
+      { id: uid(), type: 'editionCta', enabled: true },
+      { id: uid(), type: 'featured', enabled: true, mode: 'auto' },
       { id: uid(), type: 'supporter', enabled: true, mode: 'auto' },
       { id: uid(), type: 'footer', enabled: true },
     ],
@@ -84,7 +78,9 @@ function makeDefaultConfig(
 // Walks a config and populates the ResolvedData bag:
 //  - autoEventsByBlockId: results of auto-mode event-section queries
 //  - autoFeaturedEvent: the next upcoming GPC event (for auto-mode featured block)
-//  - autoAdvertiserByBlockId: the chosen advertiser per auto-mode presenting/supporter block
+//  - autoAdvertiserByBlockId: the chosen advertiser for an auto-mode presenting block
+//  - autoAdvertisersByBlockId: every logo booked, for an auto-mode supporter block
+//  - editionEventCount: how many things the week's page carries
 //  - autoRegulars: the recurring rows (for auto-mode regulars block)
 //  - events / advertisers: resolved rows for any manual-mode block that specifies IDs
 
@@ -98,8 +94,10 @@ async function resolveDataForConfig(
     advertisers: {},
     autoEventsByBlockId: {},
     autoAdvertiserByBlockId: {},
+    autoAdvertisersByBlockId: {},
     autoFeaturedEvent: null,
     autoRegulars: [],
+    editionEventCount: 0,
   }
 
   const todayIso = new Date().toISOString().split('T')[0]
@@ -146,17 +144,42 @@ async function resolveDataForConfig(
     return (data as EventData[]) || []
   }
 
-  async function loadAdvertiserForBlock(block: PresentingBlock | SupporterBlock): Promise<AdvertiserData | null> {
-    const adType = block.type === 'presenting' ? 'featured-ad' : 'logo-sponsor'
+  // Every booking of one tier for this week, oldest first. Ordering is explicit so
+  // the supporter row is stable between the preview and the sent email.
+  // MIRROR: loadAdvertisers in src/lib/newsletter/resolveData.ts.
+  async function loadAdvertisers(adType: string): Promise<AdvertiserData[]> {
     const { data } = await supabase
       .from('newsletter_advertisers')
       .select('*')
       .eq('newsletter_date', weekOfIso)
       .eq('ad_type', adType)
       .in('status', ['confirmed', 'included'])
-      .limit(1)
-      .maybeSingle()
-    return (data as AdvertiserData) || null
+      .order('created_at', { ascending: true })
+    return (data as AdvertiserData[]) || []
+  }
+
+  // How many things are on the edition page this week -- the number the CTA and
+  // the WhatsApp message both quote. Not derivable from the blocks: the email
+  // carries five picks and the page carries the lot.
+  // MIRROR: countEditionEvents in src/lib/newsletter/resolveData.ts, and the pair
+  // of queries in src/hooks/useEdition.js that builds the page itself.
+  async function countEditionEvents(): Promise<number> {
+    const to = addDays(weekOfIso, 6)
+    const [dated, regulars] = await Promise.all([
+      supabase
+        .from('london_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('approved', true)
+        .eq('is_recurring', false)
+        .gte('effective_end_date', weekOfIso)
+        .lte('date', to),
+      supabase
+        .from('london_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('approved', true)
+        .eq('is_recurring', true),
+    ])
+    return (dated.count || 0) + (regulars.count || 0)
   }
 
   // FIRST SECTION WINS. Until runs existed, "This Week" [0,7] and "Coming up"
@@ -214,17 +237,34 @@ async function resolveDataForConfig(
           if (row.id) resolved.events[row.id] = row
         }
       }
-    } else if (block.type === 'presenting' || block.type === 'supporter') {
-      const ab = block as PresentingBlock | SupporterBlock
-      if (ab.mode === 'auto') {
-        resolved.autoAdvertiserByBlockId[block.id] = await loadAdvertiserForBlock(ab)
-      } else if (ab.advertiserId) {
+    } else if (block.type === 'presenting') {
+      const pb = block as PresentingBlock
+      if (pb.mode === 'auto') {
+        // One slot, so one row -- but off an ordered list rather than an unordered
+        // limit(1), so a week with two featured-ad bookings picks the same one
+        // every time instead of whichever the planner happened to emit.
+        const [first] = await loadAdvertisers('featured-ad')
+        resolved.autoAdvertiserByBlockId[block.id] = first || null
+      } else if (pb.advertiserId) {
         const { data } = await supabase
           .from('newsletter_advertisers')
           .select('*')
-          .eq('id', ab.advertiserId)
+          .eq('id', pb.advertiserId)
           .maybeSingle()
-        if (data) resolved.advertisers[ab.advertiserId] = data as AdvertiserData
+        if (data) resolved.advertisers[pb.advertiserId] = data as AdvertiserData
+      }
+    } else if (block.type === 'supporter') {
+      const sb = block as SupporterBlock
+      if (sb.mode === 'auto') {
+        resolved.autoAdvertisersByBlockId[block.id] = await loadAdvertisers('logo-sponsor')
+      } else if (sb.advertiserIds && sb.advertiserIds.length > 0) {
+        const { data } = await supabase
+          .from('newsletter_advertisers')
+          .select('*')
+          .in('id', sb.advertiserIds)
+        for (const row of (data as AdvertiserData[]) || []) {
+          if (row.id) resolved.advertisers[row.id] = row
+        }
       }
     } else if (block.type === 'regulars') {
       const rb = block as RegularsBlock
@@ -246,6 +286,8 @@ async function resolveDataForConfig(
       }
     }
   }
+
+  resolved.editionEventCount = await countEditionEvents()
 
   return resolved
 }
@@ -308,13 +350,20 @@ Deno.serve(async (req) => {
 
     if (insertError) throw insertError
 
-    // Mark auto-resolved advertisers as 'included' (leave already-included rows alone)
+    // Mark auto-resolved advertisers as 'included' (leave already-included rows alone).
+    // The supporter block resolves to a LIST now; collecting only the first would
+    // leave three of four paid logos sitting at 'confirmed' after they had gone
+    // out, which is the record the click report is reconciled against.
     const usedAdvertiserIds: string[] = []
     for (const block of config.blocks) {
       if (!block.enabled) continue
-      if (block.type === 'presenting' || block.type === 'supporter') {
+      if (block.type === 'presenting') {
         const adv = resolved.autoAdvertiserByBlockId[block.id]
         if (adv?.id) usedAdvertiserIds.push(adv.id)
+      } else if (block.type === 'supporter') {
+        for (const adv of resolved.autoAdvertisersByBlockId[block.id] || []) {
+          if (adv?.id) usedAdvertiserIds.push(adv.id)
+        }
       }
     }
     if (usedAdvertiserIds.length > 0) {
@@ -347,13 +396,24 @@ function buildEventsIncluded(config: NewsletterConfig, resolved: ResolvedData): 
       const ev = resolved.autoFeaturedEvent
       if (ev?.id) out.push({ type: 'gpc', id: ev.id, title: ev.title || '' })
     } else if (block.type === 'eventSection') {
-      const events = resolved.autoEventsByBlockId[block.id] || []
+      const all = resolved.autoEventsByBlockId[block.id] || []
+      // Capped the same way the renderer caps it. A picks block resolves twelve
+      // rows and prints five; recording all twelve would have the draft claim
+      // events that never appeared in it.
+      const events =
+        Number.isInteger(block.limit) && (block.limit as number) > 0
+          ? all.slice(0, block.limit as number)
+          : all
       for (const ev of events) {
         if (ev.id) out.push({ type: 'london', id: ev.id, title: ev.title || '' })
       }
-    } else if (block.type === 'presenting' || block.type === 'supporter') {
+    } else if (block.type === 'presenting') {
       const adv = resolved.autoAdvertiserByBlockId[block.id]
       if (adv?.id) out.push({ type: 'advertiser', id: adv.id, title: adv.event_title || '' })
+    } else if (block.type === 'supporter') {
+      for (const adv of resolved.autoAdvertisersByBlockId[block.id] || []) {
+        if (adv?.id) out.push({ type: 'advertiser', id: adv.id, title: adv.advertiser_name || '' })
+      }
     }
   }
   return out

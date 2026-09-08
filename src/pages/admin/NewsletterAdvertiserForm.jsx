@@ -10,6 +10,10 @@ const emptyForm = {
   event_title: '',
   event_description: '',
   event_url: '',
+  event_when: '',
+  event_price: '',
+  event_where: '',
+  cta_label: '',
   image_url: '',
   logo_bg: '#ffffff',
   newsletter_date: '',
@@ -63,6 +67,10 @@ export default function NewsletterAdvertiserForm() {
           event_title: data.event_title || '',
           event_description: data.event_description || '',
           event_url: data.event_url || '',
+          event_when: data.event_when || '',
+          event_price: data.event_price || '',
+          event_where: data.event_where || '',
+          cta_label: data.cta_label || '',
           image_url: data.image_url || '',
           logo_bg: data.logo_bg || '#ffffff',
           newsletter_date: data.newsletter_date || '',
@@ -209,6 +217,61 @@ export default function NewsletterAdvertiserForm() {
             placeholder={form.is_brand_sponsor ? 'A short line about what the sponsor does' : 'Details to include in the newsletter'}
           />
         </label>
+
+        {/* The presenting card's When / Price / Where table. Only a Featured ad
+            prints it, and only when it is an event rather than a brand. Blank
+            rows are left out of the card rather than printed empty. */}
+        {form.ad_type === 'featured-ad' && !form.is_brand_sponsor && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <label className="block sm:col-span-3">
+              <span className="text-sm font-semibold text-dark">When</span>
+              <input
+                type="text"
+                value={form.event_when}
+                onChange={(e) => set('event_when', e.target.value)}
+                className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                placeholder="e.g. Wed 10:30–11:10am (1–4 yrs); 11:15am–12pm Mum &amp; Baby"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-dark">Price</span>
+              <input
+                type="text"
+                value={form.event_price}
+                onChange={(e) => set('event_price', e.target.value)}
+                className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                placeholder="e.g. £15 trial class"
+              />
+            </label>
+            <label className="block sm:col-span-2">
+              <span className="text-sm font-semibold text-dark">Where</span>
+              <input
+                type="text"
+                value={form.event_where}
+                onChange={(e) => set('event_where', e.target.value)}
+                className="mt-1 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                placeholder="e.g. Unit 24, 53 Norman Rd, SE10 9QF"
+              />
+            </label>
+          </div>
+        )}
+
+        {form.ad_type === 'featured-ad' && (
+          <label className="block">
+            <span className="text-sm font-semibold text-dark">Button wording</span>
+            <p className="text-xs text-gray-500 mb-2">
+              The advertiser&apos;s own call to action on the card. Blank falls back to
+              &ldquo;{form.is_brand_sponsor ? 'Visit the website' : 'Find out more'}&rdquo;.
+            </p>
+            <input
+              type="text"
+              value={form.cta_label}
+              onChange={(e) => set('cta_label', e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+              placeholder="e.g. Book a trial class"
+            />
+          </label>
+        )}
 
         <label className="block">
           <span className="text-sm font-semibold text-dark">

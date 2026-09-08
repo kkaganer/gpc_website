@@ -22,8 +22,10 @@ export async function resolveDataForConfig(config: NewsletterConfig): Promise<Re
     advertisers: {},
     autoEventsByBlockId: {},
     autoAdvertiserByBlockId: {},
+    autoAdvertisersByBlockId: {},
     autoFeaturedEvent: null,
     autoRegulars: [],
+    editionEventCount: 0,
   }
 
   const todayIso = new Date().toISOString().split('T')[0]
@@ -69,19 +71,43 @@ export async function resolveDataForConfig(config: NewsletterConfig): Promise<Re
     return (data as EventData[]) || []
   }
 
-  async function loadAdvertiserForBlock(
-    block: PresentingBlock | SupporterBlock
-  ): Promise<AdvertiserData | null> {
-    const adType = block.type === 'presenting' ? 'featured-ad' : 'logo-sponsor'
+  // Every booking of one tier for this week, oldest first. Ordering is explicit
+  // so the supporter row is stable between the preview and the sent email --
+  // without it Postgres is free to hand back the logos in a different order each
+  // time, and an advertiser who paid for the top-left tile would not reliably get
+  // it.
+  async function loadAdvertisers(adType: string): Promise<AdvertiserData[]> {
     const { data } = await supabase
       .from('newsletter_advertisers')
       .select('*')
       .eq('newsletter_date', weekOfIso)
       .eq('ad_type', adType)
       .in('status', ['confirmed', 'included'])
-      .limit(1)
-      .maybeSingle()
-    return (data as AdvertiserData) || null
+      .order('created_at', { ascending: true })
+    return (data as AdvertiserData[]) || []
+  }
+
+  // How many things are on the edition page this week. MIRROR: useEdition.js runs
+  // the identical pair of queries to build the page itself, and
+  // generate-newsletter/index.ts runs them server-side. All three have to agree,
+  // or the email promises a number the page does not deliver.
+  async function countEditionEvents(): Promise<number> {
+    const to = addDays(weekOfIso, 6)
+    const [dated, regulars] = await Promise.all([
+      supabase
+        .from('london_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('approved', true)
+        .eq('is_recurring', false)
+        .gte('effective_end_date', weekOfIso)
+        .lte('date', to),
+      supabase
+        .from('london_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('approved', true)
+        .eq('is_recurring', true),
+    ])
+    return (dated.count || 0) + (regulars.count || 0)
   }
 
   // FIRST SECTION WINS. Until runs existed, "This Week" [0,7] and "Coming up"
@@ -132,17 +158,34 @@ export async function resolveDataForConfig(config: NewsletterConfig): Promise<Re
           if (row.id) resolved.events[row.id] = row
         }
       }
-    } else if (block.type === 'presenting' || block.type === 'supporter') {
-      const ab = block as PresentingBlock | SupporterBlock
-      if (ab.mode === 'auto') {
-        resolved.autoAdvertiserByBlockId[block.id] = await loadAdvertiserForBlock(ab)
-      } else if (ab.advertiserId) {
+    } else if (block.type === 'presenting') {
+      const pb = block as PresentingBlock
+      if (pb.mode === 'auto') {
+        // One slot, so one row -- but taken off an ordered list rather than an
+        // unordered limit(1), so a week with two featured-ad bookings picks the
+        // same one every time instead of whichever the planner happened to emit.
+        const [first] = await loadAdvertisers('featured-ad')
+        resolved.autoAdvertiserByBlockId[block.id] = first || null
+      } else if (pb.advertiserId) {
         const { data } = await supabase
           .from('newsletter_advertisers')
           .select('*')
-          .eq('id', ab.advertiserId)
+          .eq('id', pb.advertiserId)
           .maybeSingle()
-        if (data) resolved.advertisers[ab.advertiserId] = data as AdvertiserData
+        if (data) resolved.advertisers[pb.advertiserId] = data as AdvertiserData
+      }
+    } else if (block.type === 'supporter') {
+      const sb = block as SupporterBlock
+      if (sb.mode === 'auto') {
+        resolved.autoAdvertisersByBlockId[block.id] = await loadAdvertisers('logo-sponsor')
+      } else if (sb.advertiserIds && sb.advertiserIds.length > 0) {
+        const { data } = await supabase
+          .from('newsletter_advertisers')
+          .select('*')
+          .in('id', sb.advertiserIds)
+        for (const row of (data as AdvertiserData[]) || []) {
+          if (row.id) resolved.advertisers[row.id] = row
+        }
       }
     } else if (block.type === 'regulars') {
       const rb = block as RegularsBlock
@@ -164,6 +207,8 @@ export async function resolveDataForConfig(config: NewsletterConfig): Promise<Re
       }
     }
   }
+
+  resolved.editionEventCount = await countEditionEvents()
 
   return resolved
 }

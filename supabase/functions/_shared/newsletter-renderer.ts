@@ -1,28 +1,46 @@
 // Shared newsletter renderer — pure string-builder with no runtime dependencies.
-// Imported by both the Deno edge function (generate-newsletter/index.ts) and
-// the browser editor (src/lib/newsletter/renderer.ts, which is a byte-for-byte
-// mirror of this file).
+// Imported by both the Deno edge function (generate-newsletter/index.ts) and the
+// browser editor, which reaches across the supabase/ boundary to import this very
+// file. There is no mirror copy: one file, two runtimes.
 //
-// The `createRenderers(theme, brand)` factory returns a set of bound render
-// functions that use the given theme/brand closures, so each renderer body
-// stays nearly identical to the pre-refactor code.
+// The `createRenderers(theme, brand, fonts, options)` factory returns a set of
+// bound render functions closed over the resolved theme, so each renderer body
+// reads as plain markup with tokens interpolated.
+//
+// EMAIL HTML IS NOT WEB HTML. Tables, inline styles and explicit bgcolor are
+// deliberate. No flexbox, no grid, no <style> rules beyond the reset, no webfont
+// link — Poppins falls back to Trebuchet MS and Nunito to Verdana, and the
+// hierarchy has to hold on the fallbacks because Gmail will never load either.
 
 // ---------- Types ----------
 
 export type ThemeColors = {
+  /** Warm ground behind the whole email. */
   page: string
+  /** White card sitting on the warm ground. */
+  card: string
+  /** Headings, dark bands, footer. */
   dark: string
+  /** Body copy. */
   body: string
+  /** The strongest text weight of colour. */
   black: string
+  /** Brand pink. FILLS AND RULES ONLY — 3.6:1 on white, it fails as text. */
   pink: string
-  blue: string
-  skyBlue: string
-  lavender: string
-  butter: string
-  paleBlue: string
-  purple: string
-  footer: string
+  /** The AA-safe pink, for anything pink that is read rather than looked at. */
+  pinkText: string
+  /** The tint plate a paid-placement label sits on. */
+  pinkTint: string
+  /** Meta lines. The lightest text allowed. */
   muted: string
+  /** Preheader and fine print only — below AA at body size. */
+  faint: string
+  /** Card borders and the rules between rows. */
+  hairline: string
+  /** The FREE plate. */
+  green: string
+  /** Footer band. */
+  footer: string
 }
 
 export type Fonts = {
@@ -34,6 +52,7 @@ export type Fonts = {
 export type BrandConfig = {
   subscribeUrl: string
   instagramUrl: string
+  instagramHandle: string
   websiteUrl: string
   donateUrl: string
   newsEmail: string
@@ -45,14 +64,16 @@ export type BrandConfig = {
 export type NewsletterMetadata = {
   todayLong: string
   weekOf: string
+  /** The inbox preview line. Falls back to a slice of the intro when unset. */
+  preheader?: string
 }
 
-// Block types — discriminated union
 export type MastheadBlock = {
   id: string
   type: 'masthead'
   enabled: boolean
   wordmark?: string
+  /** Rendered only when set. The masthead carries the edition date instead. */
   tagline?: string
   logoUrl?: string
 }
@@ -79,12 +100,14 @@ export type FeaturedBlock = {
   enabled: boolean
   mode: 'auto' | 'manual'
   eventId?: string | null
+  /** The small uppercase line above the title. */
+  eyebrow?: string
   overrides?: Partial<EventData>
 }
 
 export type EventFilter = {
   source: 'london_events' | 'gpc_events'
-  dateFrom?: number // days-from-now offset
+  dateFrom?: number
   dateTo?: number
   areas?: 'se-london' | 'outside-se-london' | 'all'
   recurring?: boolean
@@ -96,6 +119,14 @@ export type EventSectionBlock = {
   enabled: boolean
   title: string
   kicker?: string
+  /**
+   * `picks` is the numbered card from the redesign: a lead item and a short
+   * numbered tail, capped by `limit`. `list` is the long-form paragraph list the
+   * newsletter used to be made of, kept so a long edition is still buildable.
+   */
+  layout?: 'list' | 'picks'
+  /** Hard cap on rendered rows. Unset means all of them. */
+  limit?: number
   mode: 'auto' | 'manual'
   filter: EventFilter
   eventIds?: string[]
@@ -135,8 +166,33 @@ export type SupporterBlock = {
   type: 'supporter'
   enabled: boolean
   mode: 'auto' | 'manual'
-  advertiserId?: string | null
-  overrides?: Partial<AdvertiserData>
+  /**
+   * Manual mode: which advertisers fill the row, in order. Plural because a week
+   * sells several logo slots; the row used to render exactly one however many
+   * were booked.
+   */
+  advertiserIds?: string[]
+  /** Keyed by advertiser id, since the block now holds several. */
+  overrides?: Record<string, Partial<AdvertiserData>>
+  heading?: string
+}
+
+/**
+ * The one filled button in the email: through to this week's guide on the site.
+ *
+ * Its own block type rather than a configured `ctaBlock` because the label has to
+ * carry the true event count and the href has to track the edition date, and both
+ * come from resolved data rather than from anything an editor types.
+ */
+export type EditionCtaBlock = {
+  id: string
+  type: 'editionCta'
+  enabled: boolean
+  /** `{count}` is substituted. Default: "See all {count} events →". */
+  label?: string
+  /** Overrides the derived /whats-on/{weekOf} destination. */
+  url?: string
+  note?: string
 }
 
 export type FooterBlock = {
@@ -145,6 +201,12 @@ export type FooterBlock = {
   enabled: boolean
   cicText?: string
   unsubscribeLabel?: string
+  /**
+   * The ESP's unsubscribe merge tag. Left configurable rather than guessed: the
+   * old renderer shipped a literal href="#" here, so the link in every sent
+   * edition went nowhere.
+   */
+  unsubscribeUrl?: string
 }
 
 export type TextBlock = {
@@ -195,6 +257,7 @@ export type Block =
   | DonationStripBlock
   | RegularsBlock
   | SupporterBlock
+  | EditionCtaBlock
   | FooterBlock
   | TextBlock
   | ImageBlock
@@ -245,6 +308,12 @@ export type AdvertiserData = {
   is_brand_sponsor?: boolean
   logo_bg?: string
   ad_type?: string
+  // Migration 033. All nullable: a booking taken before it has none of them, and
+  // the card renders without the label table rather than showing empty rows.
+  event_when?: string
+  event_price?: string
+  event_where?: string
+  cta_label?: string
 }
 
 export type ResolvedData = {
@@ -252,38 +321,55 @@ export type ResolvedData = {
   advertisers: Record<string, AdvertiserData>
   autoEventsByBlockId: Record<string, EventData[]>       // results of auto-mode event queries, keyed by block.id
   autoAdvertiserByBlockId: Record<string, AdvertiserData | null>
+  /** Supporter blocks: every logo booked for the week, in order. */
+  autoAdvertisersByBlockId: Record<string, AdvertiserData[]>
   autoFeaturedEvent: EventData | null                     // the singleton featured GPC event when featured block is in auto mode
   autoRegulars: EventData[]
+  /**
+   * How many things are on the edition page this week.
+   *
+   * NOT derivable from the blocks above: the email carries five picks and the
+   * page carries the lot, so counting what the email rendered would understate it
+   * by an order of magnitude. Both the CTA label and the WhatsApp message need
+   * the real number.
+   */
+  editionEventCount: number
 }
 
 // ---------- Defaults ----------
 
+// The site's own tokens (docs/design-system.md), not the email's old palette.
+// Pink is a fill and a rule; pinkText is the only pink allowed to carry meaning.
 export const DEFAULT_COLORS: ThemeColors = {
-  page: '#ffffff',
-  dark: '#1f2d3d',
-  body: '#3b3f44',
-  black: '#000000',
+  page: '#fffaf5',
+  card: '#ffffff',
+  dark: '#2d1b4e',
+  body: '#4a5565',
+  black: '#1a1a2e',
   pink: '#fc16a0',
-  blue: '#0092ff',
-  skyBlue: '#76bae3',
-  lavender: '#eef0ff',
-  butter: '#fffad7',
-  paleBlue: '#d2ebf8',
-  purple: '#785cf1',
-  footer: '#eff2f7',
-  muted: '#6b6b7d',
+  pinkText: '#d1067f',
+  pinkTint: '#fff5fb',
+  muted: '#6a7282',
+  faint: '#99a1af',
+  hairline: '#f3f4f6',
+  green: '#00c950',
+  footer: '#2d1b4e',
 }
 
+// No <link> to Google Fonts anywhere in the output: Gmail strips it, Outlook
+// ignores it, and a webfont that loads in one client and not another is worse
+// than none. The fallbacks are the design.
 export const DEFAULT_FONTS: Fonts = {
-  heading: 'tahoma, geneva, sans-serif',
-  wordmark: 'verdana, geneva, sans-serif',
-  body: 'arial, helvetica, sans-serif',
+  heading: "'Poppins','Trebuchet MS',Verdana,sans-serif",
+  wordmark: "'Poppins','Trebuchet MS',Verdana,sans-serif",
+  body: "'Nunito',Verdana,Geneva,sans-serif",
 }
 
 export const DEFAULT_BRAND: BrandConfig = {
   subscribeUrl:
     'https://51297dd9.sibforms.com/serve/MUIFABZzIxkfNU_V57t_MOrGiJJSy1__hBpAYzja2pBanbdx1i6Bp_IUNK0gC9nIIQnVxTtz0rSaLHKhruUHKiTF7hZ70GeITq95O1wHd6J5EmchzdqYYEmaVICm36thRTUCH3lzvNzEdAYklr3XgX_YsPj-URiiusBsahwDMcPAh6x23h6RXMOlro6n8f3VAFYKE6n1vMdy45qQ',
   instagramUrl: 'https://www.instagram.com/gpc.community/',
+  instagramHandle: '@gpc.community',
   websiteUrl: 'https://www.gpccommunity.co.uk/',
   donateUrl: 'https://www.zeffy.com/en-GB/donation-form/buy-the-gpc-team-a-coffee',
   newsEmail: 'gpc.communitynews@gmail.com',
@@ -302,6 +388,14 @@ export { SE_LONDON_AREAS, DAY_NAMES_LONG }
 /** Supporter logo tile, in CSS px. Logos are normalised to this at upload
  *  (see src/lib/logoNormalise.js), so the renderer can state both dimensions. */
 export const SUPPORTER_LOGO = { width: 260, height: 160 }
+
+/** The supporter logo as it sits in the email row: the normalised 260x160 plate
+ *  at half size, so two tiles fit side by side inside the 600px shell and the
+ *  artwork is still legible. */
+export const SUPPORTER_ROW_LOGO = { width: 130, height: 80 }
+
+/** The presenting photo, at the shell's full inner width. */
+export const PRESENTING_IMAGE = { width: 552, height: 200 }
 
 // ---------- WhatsApp ----------
 
@@ -366,7 +460,14 @@ export function renderWhatsapp(
     if (names.length < 4) names.push(t)
   }
 
-  const total = Number.isInteger(opts.eventCount) ? opts.eventCount : seen.size
+  // The edition page's count, not the email's. Since the email became five picks
+  // plus a link, counting the blocks it rendered would have WhatsApp announcing
+  // "5 things for families in Greenwich" for a week with forty on the page.
+  const total = Number.isInteger(opts.eventCount)
+    ? opts.eventCount
+    : Number.isInteger(resolved?.editionEventCount) && resolved.editionEventCount > 0
+      ? resolved.editionEventCount
+      : seen.size
   const countPhrase = total && total > 0
     ? `${total} things for families in Greenwich`
     : 'This week for families in Greenwich'
@@ -410,23 +511,62 @@ export function formatDateLong(iso: string): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-export function formatDateShort(iso: string): string {
-  const d = new Date(iso + 'T00:00:00')
-  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+/**
+ * The masthead date: "Friday 12 June".
+ *
+ * Distinct from formatDateLong, which is the "12 Jun 2026" stamp the intro line
+ * used to carry. The masthead names the day of the week because the whole promise
+ * of the thing is that it arrives on a Friday.
+ */
+export function formatEditionDateLong(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(`${iso}T00:00:00Z`)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  })
 }
 
+export function formatDateShort(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  })
+}
+
+// A calendar date has no time zone, so all of these parse AND serialise in UTC.
+//
+// They used to parse local ('2026-09-08T00:00:00', no Z) and serialise UTC
+// (toISOString), which is a day out for the whole of British Summer Time: local
+// midnight on the 8th is 23:00Z on the 7th, so every result rounded down a day.
+// nearestFriday returned a THURSDAY from late March to late October, and the
+// browser and the Deno function -- one in London, one on a UTC server -- did not
+// even agree with each other.
 export function addDays(iso: string, days: number): string {
-  const d = new Date(iso + 'T00:00:00')
-  d.setDate(d.getDate() + days)
+  const d = new Date(`${iso}T00:00:00Z`)
+  if (Number.isNaN(d.getTime())) return iso
+  d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().split('T')[0]
 }
 
 export function nearestFriday(todayIso: string): string {
-  const d = new Date(todayIso + 'T00:00:00')
-  const dow = d.getDay()
-  const daysUntilFriday = (5 - dow + 7) % 7
-  d.setDate(d.getDate() + daysUntilFriday)
+  const d = new Date(`${todayIso}T00:00:00Z`)
+  if (Number.isNaN(d.getTime())) return todayIso
+  const daysUntilFriday = (5 - d.getUTCDay() + 7) % 7
+  d.setUTCDate(d.getUTCDate() + daysUntilFriday)
   return d.toISOString().split('T')[0]
+}
+
+/** Today, as a calendar date, in the same UTC frame as everything above. */
+export function todayIso(): string {
+  return new Date().toISOString().split('T')[0]
 }
 
 export function isGpcHosted(ev: EventData): boolean {
@@ -463,25 +603,85 @@ export function createRenderers(
     return ` data-edit="${blockId}|${itemId}|${field}"`
   }
 
-  function renderMastheadBlock(block: MastheadBlock): string {
+  const siteRoot = B.websiteUrl.replace(/\/$/, '')
+
+  /** An absolute URL on the site. Every href in an email has to be absolute. */
+  function siteUrl(path: string): string {
+    return `${siteRoot}/${String(path).replace(/^\//, '')}`
+  }
+
+  // MIRROR: clickUrl in api/click.js. Serverless functions cannot import from
+  // src/, so the shape is duplicated on purpose. If one changes, change the other.
+  function trackedUrl(rawUrl: string, advertiserId?: string, editionDate = ''): string {
+    if (!rawUrl || !advertiserId) return rawUrl
+    const params = new URLSearchParams({ id: advertiserId, source: 'email' })
+    if (editionDate) params.set('date', editionDate)
+    return `${siteRoot}/click?${params.toString()}`
+  }
+
+  // ---------- Shared bits of furniture ----------
+
+  // The 64x4 rule under a heading. A table rather than a div: Outlook's Word
+  // engine collapses an empty div to nothing, and this is load-bearing brand.
+  function pinkRule(align: 'left' | 'center' = 'left'): string {
+    const margin = align === 'center' ? 'margin:12px auto;' : 'margin:10px 0 0 0;'
+    return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="${align}" style="${margin}border-collapse:collapse;"><tr><td width="64" height="4" bgcolor="${C.pink}" style="width:64px;height:4px;background-color:${C.pink};border-radius:9999px;font-size:0;line-height:0;">&nbsp;</td></tr></table>`
+  }
+
+  /** The small uppercase label above a heading or inside a dark card. */
+  function eyebrow(text: string, color: string, attr = ''): string {
+    return `<div style="font-family:${F.body};font-weight:700;font-size:11px;line-height:16px;letter-spacing:0.08em;text-transform:uppercase;color:${color};"${attr}>${text}</div>`
+  }
+
+  /** The green FREE plate. The one thing parents scan for. */
+  function freePill(size: 'lead' | 'row' = 'row'): string {
+    const fs = size === 'lead' ? '11px' : '10px'
+    const pad = size === 'lead' ? '3px 10px' : '2px 9px'
+    return `<span style="display:inline-block;background-color:${C.green};color:${C.dark};font-family:${F.body};font-weight:700;font-size:${fs};letter-spacing:0.06em;padding:${pad};border-radius:9999px;">FREE</span>`
+  }
+
+  // "Fri 12 Jun, 10.30am · Charlton House Library · £10". Price is appended only
+  // when it is not free, because a FREE row already carries the green plate and
+  // saying it twice makes the plate look like decoration.
+  function eventMetaLine(ev: EventData, opts: { withPrice?: boolean } = {}): string {
+    const bits: string[] = []
+    const when: string[] = []
+    if (ev.date) when.push(formatDateShort(ev.date))
+    if (ev.time) when.push(escapeHtml(ev.time))
+    if (when.length) bits.push(when.join(', '))
+    const where = ev.location || ev.venue
+    if (where) bits.push(escapeHtml(where))
+    if (ev.age_range) bits.push(`Age ${escapeHtml(ev.age_range)}`)
+    if (opts.withPrice && !ev.is_free && ev.price) bits.push(escapeHtml(ev.price))
+    return bits.join(' &middot; ')
+  }
+
+  /** Where a listing row points. Prefers a booking link over the site page. */
+  function eventHref(ev: EventData): string {
+    if (ev.ticket_url) return ev.ticket_url
+    if (ev.url) return ev.url
+    if (ev.slug) return siteUrl(`events/${ev.slug}`)
+    return ''
+  }
+
+  // ---------- Masthead ----------
+
+  function renderMastheadBlock(block: MastheadBlock, metadata: NewsletterMetadata): string {
     if (!block.enabled) return ''
     const logo = block.logoUrl || B.logoUrl
     const wordmark = escapeHtml(block.wordmark || "What's On Guide")
-    const tagline = escapeHtml(
-      block.tagline || 'Local events and activities for families - please share with your friends'
-    )
+    // The tagline is opt-in now. The masthead's job is the name, the rule and the
+    // date; the old standing sentence sat between the wordmark and the date and
+    // pushed the first real content below the fold on a phone.
+    const tagline = block.tagline ? escapeHtml(block.tagline) : ''
+    const editionDate = escapeHtml(formatEditionDateLong(metadata.weekOf) || metadata.todayLong || '')
     return `
-  <tr><td align="center" style="padding:24px 20px 8px 20px;background-color:${C.page};">
-    <img src="${escapeHtml(logo)}" width="102" alt="Greenwich Parents & Carers" style="display:block;width:102px;max-width:102px;height:auto;border:0;outline:none;text-decoration:none;"${editAttr(block.id, 'logoUrl')}>
-  </td></tr>
-  <tr><td align="center" style="padding:12px 20px 0 20px;background-color:${C.page};">
-    <h2 style="margin:0;font-family:${F.heading};font-size:22px;line-height:1.3;color:${C.black};font-weight:bold;"${editAttr(block.id)}>Greenwich Parents &amp; Carers</h2>
-  </td></tr>
-  <tr><td align="center" style="padding:4px 20px 0 20px;background-color:${C.page};">
-    <div style="font-family:${F.wordmark};font-size:36px;line-height:1.2;color:${C.black};font-weight:bold;"${editAttr(block.id, 'wordmark')}>${wordmark}</div>
-  </td></tr>
-  <tr><td align="center" style="padding:8px 20px 0 20px;background-color:${C.page};">
-    <p style="margin:0;font-family:${F.body};font-size:16px;line-height:1.5;color:${C.body};"${editAttr(block.id, 'tagline')}><em>${tagline}</em></p>
+  <tr><td align="center" style="padding:28px 24px 20px 24px;background-color:${C.page};">
+    <img src="${escapeHtml(logo)}" width="132" alt="Greenwich Parents &amp; Carers" style="width:132px;max-width:132px;height:auto;display:block;border:0;outline:none;text-decoration:none;margin:0 auto 14px auto;">
+    <div style="font-family:${F.wordmark};font-weight:700;font-size:28px;line-height:34px;color:${C.dark};"${editAttr(block.id, 'wordmark')}>${wordmark}</div>
+    ${pinkRule('center')}
+    <div style="font-family:${F.body};font-weight:700;font-size:14px;line-height:20px;letter-spacing:0.025em;text-transform:uppercase;color:${C.muted};">${editionDate}</div>
+    ${tagline ? `<div style="font-family:${F.body};font-size:15px;line-height:24px;color:${C.body};padding-top:10px;"${editAttr(block.id, 'tagline')}>${tagline}</div>` : ''}
   </td></tr>`
   }
 
@@ -490,256 +690,338 @@ export function createRenderers(
     const label = escapeHtml(block.label || 'Subscribe')
     const url = escapeHtml(block.url || B.subscribeUrl)
     return `
-  <tr><td align="center" style="padding:20px 20px 20px 20px;background-color:${C.page};">
+  <tr><td align="center" style="padding:4px 24px 20px 24px;background-color:${C.page};">
     <!--[if mso]>
-    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${url}" style="v-text-anchor:middle;width:136px;height:45px;" arcsize="10%" strokecolor="${C.pink}" fillcolor="${C.pink}">
+    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${url}" style="v-text-anchor:middle;width:180px;height:44px;" arcsize="50%" strokecolor="${C.pink}" fillcolor="${C.card}">
       <w:anchorlock/>
-      <center style="color:#ffffff;font-family:verdana,sans-serif;font-size:18px;font-weight:bold;">${label}</center>
+      <center style="color:#d1067f;font-family:arial,sans-serif;font-size:15px;font-weight:bold;">${label}</center>
     </v:roundrect>
     <![endif]-->
     <!--[if !mso]><!-- -->
-    <a href="${url}" style="display:inline-block;background-color:${C.pink};color:#ffffff;font-family:${F.wordmark};font-size:18px;font-weight:bold;text-decoration:none;padding:14px 28px;border-radius:4px;mso-hide:all;"${editAttr(block.id, 'label')}>${label}</a>
+    <a href="${url}" style="display:inline-block;background-color:${C.card};color:${C.pinkText};border:2px solid ${C.pink};font-family:${F.body};font-size:15px;font-weight:700;text-decoration:none;padding:11px 26px;border-radius:9999px;mso-hide:all;"${editAttr(block.id, 'label')}>${label}</a>
     <!--<![endif]-->
   </td></tr>`
   }
 
-  function renderIntroBlock(block: IntroBlock, metadata: NewsletterMetadata): string {
+  function renderIntroBlock(block: IntroBlock, _metadata: NewsletterMetadata): string {
     if (!block.enabled) return ''
-    const intro = escapeHtml(block.message || '')
-    const signature = block.signature !== undefined ? block.signature : '- Aster'
+    const message = escapeHtml(block.message || '')
+    const signature = block.signature ? escapeHtml(block.signature) : ''
+    if (!message && !signature) return ''
+    // Centred, and no longer prefixed with the date: the masthead above carries
+    // the date now, and it read as a dateline stapled to a sentence.
     return `
-  <tr><td style="padding:0 20px 24px 20px;background-color:${C.page};">
-    <p style="margin:0;font-family:${F.body};font-size:14px;line-height:1.55;color:${C.body};"${editAttr(block.id, 'message')}>
-      <strong>${escapeHtml(metadata.todayLong)}</strong> - ${intro} <em>${escapeHtml(signature)}</em>
-    </p>
+  <tr><td align="center" style="padding:4px 40px 26px 40px;background-color:${C.page};">
+    <div style="font-family:${F.body};font-size:16px;line-height:26px;color:${C.body};text-align:center;"${editAttr(block.id, 'message')}>${message}</div>
+    ${signature ? `<div style="font-family:${F.body};font-size:16px;line-height:26px;font-weight:700;color:${C.dark};padding-top:8px;"${editAttr(block.id, 'signature')}>${signature}</div>` : ''}
   </td></tr>`
   }
 
-  function renderFeaturedBlock(block: FeaturedBlock, resolved: EventData | null): string {
+  // ---------- Featured: the dark card ----------
+
+  function renderFeaturedBlock(block: FeaturedBlock, resolvedIn: EventData | null): string {
     if (!block.enabled) return ''
-    // merge overrides on top of resolved
-    const event: EventData | null = resolved
-      ? { ...resolved, ...(block.overrides || {}) }
-      : block.mode === 'manual' && block.overrides
-        ? block.overrides
+    const ev: EventData | null = resolvedIn
+      ? { ...resolvedIn, ...(block.overrides || {}) }
+      : block.overrides && Object.keys(block.overrides).length > 0
+        ? (block.overrides as EventData)
         : null
-    if (!event || (!event.title && !event.image_url)) return ''
+    if (!ev || !ev.title) return ''
 
-    const linkUrl =
-      event.ticket_url ||
-      (event.slug ? `https://www.gpccommunity.co.uk/events/${event.slug}` : '#')
-    const title = escapeHtml(event.title || '')
-    const description = escapeHtml(event.description || '')
+    const href = eventHref(ev)
+    const title = escapeHtml(ev.title)
+    const kicker = escapeHtml(block.eyebrow || 'From GPC')
 
-    const metaParts: string[] = []
-    if (event.date) metaParts.push(formatDateShort(event.date))
-    if (event.time) metaParts.push(escapeHtml(event.time))
-    if (event.location) metaParts.push(escapeHtml(event.location))
-    if (event.price) metaParts.push(escapeHtml(event.price))
-    const metaLine = metaParts.join(' | ')
+    const whenBits: string[] = []
+    if (ev.date) whenBits.push(formatDateShort(ev.date))
+    if (ev.time) whenBits.push(escapeHtml(ev.time))
+    whenBits.push(ev.is_free ? 'Free entry' : escapeHtml(ev.price || ''))
+    const whenLine = whenBits.filter(Boolean).join(' &middot; ')
+    const where = escapeHtml(ev.location || ev.venue || '')
 
-    const image = event.image_url
-      ? `<tr><td align="center" style="padding:8px 0 12px 0;">
-        <a href="${escapeHtml(linkUrl)}" target="_blank" style="text-decoration:none;">
-          <img src="${escapeHtml(event.image_url)}" width="285" alt="${title}" style="display:block;width:285px;max-width:285px;height:auto;border:0;outline:none;text-decoration:none;margin:0 auto;"${editAttr(block.id, 'image_url')}>
-        </a>
+    // Full-bleed at the top of the card when there is artwork. The fair poster is
+    // the single most-looked-at thing in the edition it appears in.
+    const image = ev.image_url
+      ? `<tr><td style="padding:0;font-size:0;line-height:0;">
+        <img src="${escapeHtml(ev.image_url)}" width="552" alt="${title}" style="display:block;width:100%;max-width:552px;height:auto;border:0;outline:none;text-decoration:none;border-radius:16px 16px 0 0;"${editAttr(block.id, 'image_url')}>
       </td></tr>`
       : ''
 
-    const cta = event.ticket_url
-      ? `<tr><td align="center" style="padding:16px 0 4px 0;">
-        <!--[if mso]>
-        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${escapeHtml(event.ticket_url)}" style="v-text-anchor:middle;width:145px;height:44px;" arcsize="20%" strokecolor="${C.blue}" fillcolor="${C.blue}">
-          <w:anchorlock/>
-          <center style="color:#ffffff;font-family:arial,sans-serif;font-size:16px;font-weight:bold;">Buy Tickets</center>
-        </v:roundrect>
-        <![endif]-->
-        <!--[if !mso]><!-- -->
-        <a href="${escapeHtml(event.ticket_url)}" style="display:inline-block;background-color:${C.blue};color:#ffffff;font-family:${F.body};font-size:16px;font-weight:bold;text-decoration:none;padding:12px 22px;border-radius:8px;mso-hide:all;"${editAttr(block.id, 'ticket_url')}>Buy Tickets</a>
-        <!--<![endif]-->
-      </td></tr>`
+    const cta = href
+      ? `<div style="padding-top:16px;"><a href="${escapeHtml(href)}" target="_blank" style="font-family:${F.body};font-weight:700;font-size:15px;line-height:22px;color:#ffffff;text-decoration:none;border-bottom:2px solid ${C.pink};padding-bottom:2px;"${editAttr(block.id, 'ticket_url')}>Find out more &rarr;</a></div>`
       : ''
 
     return `
-  <tr><td style="padding:0;background-color:${C.page};">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${C.lavender}" style="background-color:${C.lavender};">
-      <tr><td style="padding:20px 20px 24px 20px;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-          ${image}
-          <tr><td align="center" style="padding:4px 0 0 0;">
-            <p style="margin:0;font-family:${F.body};font-size:15px;line-height:1.3;color:${C.body};"><em>GPC invites you to...</em></p>
-          </td></tr>
-          <tr><td align="center" style="padding:6px 0 10px 0;">
-            <h4 style="margin:0;font-family:${F.heading};font-size:20px;line-height:1.25;color:${C.pink};font-weight:bold;"${editAttr(block.id, 'title')}>${title}</h4>
-          </td></tr>
-          ${description ? `<tr><td align="center" style="padding:0 4px 8px 4px;">
-            <p style="margin:0;font-family:${F.body};font-size:14px;line-height:1.55;color:${C.body};text-align:center;"${editAttr(block.id, 'description')}>${description}</p>
-          </td></tr>` : ''}
-          ${metaLine ? `<tr><td align="center" style="padding:0 4px 4px 4px;">
-            <p style="margin:0;font-family:${F.body};font-size:14px;line-height:1.55;color:${C.body};text-align:center;"${editAttr(block.id, 'date')}>${metaLine}</p>
-          </td></tr>` : ''}
-          ${cta}
-        </table>
+  <tr><td style="padding:26px 24px 0 24px;background-color:${C.page};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.dark}" style="background-color:${C.dark};border-collapse:collapse;border-radius:16px;">
+      ${image}
+      <tr><td style="padding:26px 26px 28px 26px;">
+        ${eyebrow(kicker, C.pink, editAttr(block.id, 'eyebrow'))}
+        <div style="font-family:${F.heading};font-weight:700;font-size:26px;line-height:33px;color:#ffffff;padding-top:8px;"${editAttr(block.id, 'title')}>${title}</div>
+        <div style="font-family:${F.body};font-size:16px;line-height:26px;color:#ffffff;padding-top:10px;"${editAttr(block.id, 'description')}>
+          ${whenLine}${where ? `<br><span style="color:rgba(255,255,255,.6);">${where}</span>` : ''}
+        </div>
+        ${cta}
       </td></tr>
     </table>
   </td></tr>`
   }
+
+  // ---------- Event rows: the long-form list ----------
+  //
+  // Kept whole, restyled. This is no longer in the default edition, but a week
+  // with something worth spelling out still wants it, and deleting it would have
+  // made "put the full list back" a code change rather than a click.
 
   function renderEventRowContent(ev: EventData, blockId = ''): string {
     const parts: string[] = []
     const evId = ev.id || ''
 
     if (ev.is_free) {
-      parts.push(`<span style="color:${C.pink};"${editAttr(blockId, 'price', evId)}><strong>FREE </strong></span>`)
-      parts.push(`<span style="color:${C.black};"><strong>- </strong></span>`)
+      parts.push(`<span style="color:${C.pinkText};"${editAttr(blockId, 'price', evId)}><strong>FREE</strong></span>`)
+      parts.push(`<span style="color:${C.black};"><strong> </strong>- </span>`)
     } else if (ev.price) {
-      parts.push(`<span style="color:${C.pink};"${editAttr(blockId, 'price', evId)}><strong>${escapeHtml(ev.price)} </strong></span>`)
-      parts.push(`<span style="color:${C.black};"><strong>- </strong></span>`)
+      parts.push(`<span style="color:${C.pinkText};"${editAttr(blockId, 'price', evId)}><strong>${escapeHtml(ev.price)}</strong></span>`)
+      parts.push(`<span style="color:${C.black};"><strong> </strong>- </span>`)
     }
 
-    const venueBit = ev.venue ? ` - ${escapeHtml(ev.venue)}` : ''
-    parts.push(`<span style="color:${C.black};"${editAttr(blockId, 'title', evId)}><strong>${escapeHtml(ev.title || '')}${venueBit}</strong></span>`)
+    const venueSuffix = ev.venue ? ` - ${escapeHtml(ev.venue)}` : ''
+    parts.push(`<span style="color:${C.black};"${editAttr(blockId, 'title', evId)}><strong>${escapeHtml(ev.title || '')}${venueSuffix}</strong></span>`)
 
     if (ev.description) {
       parts.push(`<span style="color:${C.black};"${editAttr(blockId, 'description', evId)}> - ${escapeHtml(ev.description)}</span>`)
     }
 
-    if (ev.url) {
-      parts.push(
-        ` <span style="color:${C.black};">| </span><a href="${escapeHtml(ev.url)}" target="_blank" rel="noopener noreferrer" style="color:${C.blue};text-decoration:underline;"${editAttr(blockId, 'url', evId)}><strong>Info</strong></a>`
-      )
+    const href = eventHref(ev)
+    if (href) {
+      parts.push(` <span style="color:${C.black};">| </span><a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" style="color:${C.pinkText};text-decoration:underline;"${editAttr(blockId, 'url', evId)}><strong>Info</strong></a>`)
     }
 
-    const metaBits: string[] = []
-    // A run prints its span. Newsletter sections now match anything ON during
-    // the window rather than only things STARTING in it, so a show that opened
-    // last week is legitimately included — and printing its opening date alone
-    // would read to a subscriber as an event they have already missed.
-    if (ev.date) {
-      metaBits.push(
-        ev.end_date && ev.end_date > ev.date
-          ? `${formatDateShort(ev.date)} – ${formatDateShort(ev.end_date)}`
-          : formatDateShort(ev.date),
-      )
+    const meta = eventMetaLine(ev)
+    if (meta) {
+      parts.push(`<br><span style="font-size:13px;color:${C.muted};">${meta}</span>`)
     }
-    if (ev.time) metaBits.push(escapeHtml(ev.time))
-    if (ev.age_range) metaBits.push(`Age ${escapeHtml(ev.age_range)}`)
-    if (ev.location) metaBits.push(escapeHtml(ev.location))
-
-    if (metaBits.length > 0) {
-      parts.push(
-        `<br><span style="color:${C.muted};font-size:13px;"${editAttr(blockId, 'date', evId)}>${metaBits.join(' &middot; ')}</span>`
-      )
-    }
-
     return parts.join('')
   }
 
   function renderEventRow(ev: EventData, blockId = ''): string {
     const content = renderEventRowContent(ev, blockId)
-    const highlight = isGpcHosted(ev)
-    if (highlight) {
+    // A GPC-hosted row gets the warm plate so it reads as ours without needing a
+    // label that says so.
+    if (isGpcHosted(ev)) {
       return `
     <tr><td style="padding:6px 0 10px 0;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${C.butter}" style="background-color:${C.butter};border-radius:20px;">
-        <tr><td style="padding:10px 14px;">
-          <p style="margin:0;font-family:${F.body};font-size:14px;line-height:1.55;color:${C.black};">${content}</p>
-        </td></tr>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.page}" style="background-color:${C.page};border-collapse:collapse;border-radius:12px;">
+        <tr><td style="padding:10px 14px;font-family:${F.body};font-size:14px;line-height:1.55;color:${C.black};">${content}</td></tr>
       </table>
     </td></tr>`
     }
     return `
-  <tr><td style="padding:10px 0;">
-    <p style="margin:0;font-family:${F.body};font-size:14px;line-height:1.55;color:${C.black};">${content}</p>
+    <tr><td style="padding:10px 0;font-family:${F.body};font-size:14px;line-height:1.55;color:${C.black};">${content}</td></tr>`
+  }
+
+  // ---------- Picks: the numbered card ----------
+
+  function renderPickRow(ev: EventData, index: number, blockId: string, isLast: boolean): string {
+    const evId = ev.id || ''
+    const number = String(index + 1).padStart(2, '0')
+    const lead = index === 0
+    const gpc = isGpcHosted(ev)
+
+    const plate = gpc && !lead
+      ? ` bgcolor="${C.page}" `
+      : ' '
+    const plateStyle = gpc && !lead ? `background-color:${C.page};` : ''
+    const radius = isLast ? 'border-radius:0 0 16px 16px;' : ''
+    const rule = lead ? '' : `border-top:1px solid ${C.hairline};`
+    const pad = lead ? '22px 22px 18px 22px' : '16px 22px'
+
+    const meta = eventMetaLine(ev, { withPrice: true })
+    const free = ev.is_free ? `<div style="padding-bottom:${lead ? '8px' : '6px'};">${freePill(lead ? 'lead' : 'row')}</div>` : ''
+
+    const title = lead
+      ? `<div style="font-family:${F.heading};font-weight:700;font-size:22px;line-height:29px;color:${C.dark};"${editAttr(blockId, 'title', evId)}>${escapeHtml(ev.title || '')}</div>`
+      : `<div style="font-family:${F.heading};font-weight:600;font-size:18px;line-height:25px;color:${C.dark};"${editAttr(blockId, 'title', evId)}>${escapeHtml(ev.title || '')}</div>`
+
+    // The lead gets its description; the tail is title and meta only. Five equal
+    // paragraphs is a list, and the point of a picks card is that one of them is
+    // the pick.
+    const description = lead && ev.description
+      ? `<div style="font-family:${F.body};font-size:15px;line-height:24px;color:${C.body};padding-top:8px;"${editAttr(blockId, 'description', evId)}>${escapeHtml(ev.description)}</div>`
+      : ''
+
+    const numberStyle = lead
+      ? `font-family:${F.heading};font-weight:700;font-size:24px;line-height:28px;color:${C.pink};`
+      : `font-family:${F.heading};font-weight:700;font-size:18px;line-height:26px;color:${C.pink};`
+
+    return `
+      <tr><td${plate}style="${plateStyle}padding:${pad};${rule}${radius}">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+          <td width="42" valign="top" style="width:42px;${numberStyle}">${number}</td>
+          <td valign="top">
+            ${free}${title}
+            ${meta ? `<div style="font-family:${F.body};font-size:14px;line-height:22px;color:${C.muted};padding-top:${lead ? '6px' : '4px'};"${editAttr(blockId, 'location', evId)}>${meta}</div>` : ''}
+            ${description}
+          </td>
+        </tr></table>
+      </td></tr>`
+  }
+
+  function renderPicksSection(block: EventSectionBlock, rows: EventData[]): string {
+    if (rows.length === 0) return ''
+    const title = escapeHtml(block.title || "This week's picks")
+    return `
+  <tr><td style="padding:28px 24px 6px 24px;background-color:${C.page};">
+    <div style="font-family:${F.heading};font-weight:700;font-size:22px;line-height:28px;color:${C.dark};"${editAttr(block.id)}>${title}</div>
+    ${pinkRule('left')}
+  </td></tr>
+  <tr><td style="padding:14px 24px 0 24px;background-color:${C.page};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.card}" style="background-color:${C.card};border-collapse:collapse;border-radius:16px;border:1px solid ${C.hairline};">
+      ${rows.map((ev, i) => renderPickRow(ev, i, block.id, i === rows.length - 1)).join('')}
+    </table>
   </td></tr>`
   }
 
   function renderEventSectionBlock(block: EventSectionBlock, resolved: EventData[]): string {
     if (!block.enabled || !resolved || resolved.length === 0) return ''
-    // apply per-event overrides if any + drop excluded rows
+
     const overrides = block.overrides || {}
-    const events: EventData[] = []
+    const merged: EventData[] = []
     for (const ev of resolved) {
       const override = ev.id ? overrides[ev.id] : undefined
-      const merged = override ? { ...ev, ...override } : ev
-      if (merged.excluded) continue
-      events.push(merged)
+      const row = override ? { ...ev, ...override } : ev
+      if (row.excluded) continue
+      merged.push(row)
     }
-    if (events.length === 0) return ''
-    const rows = events.map((ev) => renderEventRow(ev, block.id)).join('')
-    const kicker = block.kicker
-      ? `<p style="margin:0 0 4px 0;font-family:${F.body};font-size:12px;line-height:1.3;color:${C.muted};text-transform:uppercase;letter-spacing:1px;">${escapeHtml(block.kicker)}</p>`
-      : ''
+    if (merged.length === 0) return ''
+
+    const capped =
+      Number.isInteger(block.limit) && (block.limit as number) > 0
+        ? merged.slice(0, block.limit as number)
+        : merged
+
+    if (block.layout === 'picks') return renderPicksSection(block, capped)
+
     const gotNews = block.gotNewsFooter
-      ? `<tr><td align="center" style="padding:14px 0 4px 0;">
-          <p style="margin:0;font-family:${F.body};font-size:17px;line-height:1.4;color:${C.body};text-align:center;">
-            <strong style="color:${C.pink};">Got news to share? Tell us </strong>
-            <a href="mailto:${B.newsEmail}" style="color:${C.blue};text-decoration:underline;"><strong>${B.newsEmail}</strong></a>
-          </p>
-        </td></tr>`
+      ? `
+    <tr><td align="center" style="padding:14px 0 4px 0;">
+      <p style="margin:0;font-family:${F.body};font-size:16px;line-height:1.5;color:${C.body};text-align:center;">
+        <strong style="color:${C.pinkText};">Got news to share? Tell us </strong>
+        <a href="mailto:${B.newsEmail}" style="color:${C.pinkText};text-decoration:underline;"><strong>${B.newsEmail}</strong></a>
+      </p>
+    </td></tr>`
       : ''
 
     return `
-  <tr><td style="padding:18px 20px 12px 20px;background-color:${C.page};">
-    ${kicker}
-    <h3 style="margin:0 0 8px 0;font-family:${F.heading};font-size:28px;line-height:1.2;color:${C.skyBlue};font-weight:bold;"${editAttr(block.id, 'title')}>${escapeHtml(block.title)}</h3>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-      ${rows}
+  <tr><td style="padding:18px 24px 12px 24px;background-color:${C.page};">
+    ${block.kicker ? eyebrow(escapeHtml(block.kicker), C.muted, editAttr(block.id, 'kicker')) : ''}
+    <div style="font-family:${F.heading};font-weight:700;font-size:24px;line-height:30px;color:${C.dark};"${editAttr(block.id)}>${escapeHtml(block.title || '')}</div>
+    ${pinkRule('left')}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">
+      ${capped.map((ev) => renderEventRow(ev, block.id)).join('')}
       ${gotNews}
     </table>
   </td></tr>`
   }
 
-  // Paid slots link through the click counter rather than straight at the
-  // advertiser, so the weekly count promised in the rate card exists. Twin of
-  // `clickUrl` in api/click.js -- edge functions cannot import from api/, so it
-  // is duplicated on purpose. If one changes, change the other.
-  function trackedUrl(rawUrl: string, advertiserId: string | undefined, editionDate: string): string {
-    // No id means nothing to attribute a click to, so link straight through
-    // rather than bouncing the reader via a counter that cannot count.
-    if (!rawUrl || !advertiserId) return rawUrl
-    const params = new URLSearchParams({ id: advertiserId, source: 'email' })
-    if (editionDate) params.set('date', editionDate)
-    return `${B.websiteUrl.replace(/\/$/, '')}/click?${params.toString()}`
+  // ---------- The one filled button ----------
+
+  function renderEditionCtaBlock(
+    block: EditionCtaBlock,
+    metadata: NewsletterMetadata,
+    resolved: ResolvedData
+  ): string {
+    if (!block.enabled) return ''
+    const count = Number.isInteger(resolved?.editionEventCount) ? resolved.editionEventCount : 0
+    const href = escapeHtml(
+      block.url || siteUrl(metadata.weekOf ? `whats-on/${metadata.weekOf}` : 'whats-on')
+    )
+    const template = block.label || 'See all {count} events →'
+    // A week we could not count says "See the full guide" rather than "See all 0".
+    const label = escapeHtml(
+      count > 0
+        ? template.replace('{count}', String(count))
+        : 'See the full guide →'
+    )
+    const note = escapeHtml(
+      block.note || 'Times, prices and booking links for every one of them.'
+    )
+    return `
+  <tr><td style="padding:30px 24px 10px 24px;background-color:${C.page};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+      <tr><td align="center" bgcolor="${C.pink}" style="background-color:${C.pink};background-image:linear-gradient(to right, ${C.pink}, ${C.dark});border-radius:9999px;">
+        <!--[if mso]>
+        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${href}" style="v-text-anchor:middle;width:552px;height:68px;" arcsize="50%" stroke="f" fillcolor="${C.pink}">
+          <w:anchorlock/>
+          <center style="color:#ffffff;font-family:arial,sans-serif;font-size:22px;font-weight:bold;">${label}</center>
+        </v:roundrect>
+        <![endif]-->
+        <!--[if !mso]><!-- -->
+        <a href="${href}" target="_blank" style="display:block;padding:21px 24px;font-family:${F.heading};font-weight:700;font-size:22px;line-height:26px;color:#ffffff;text-decoration:none;text-align:center;mso-hide:all;"${editAttr(block.id, 'label')}>${label}</a>
+        <!--<![endif]-->
+      </td></tr>
+    </table>
+    <div style="font-family:${F.body};font-size:13px;line-height:20px;color:${C.muted};text-align:center;padding-top:12px;"${editAttr(block.id, 'note')}>${note}</div>
+  </td></tr>`
   }
 
-  // The unsold presenting slot. Same width and same pink rule as the sold card,
-  // dashed rather than solid so it reads as an offer rather than a placeholder.
+  // ---------- Presenting: paid tier 1 ----------
+
+  // The unsold slot. Same width and same pink rule as the sold card, dashed
+  // rather than solid so it reads as an offer rather than a placeholder.
   // Deliberately image-free: a stock photo here would compete with the picks
   // below it, and there is no advertiser whose photo it could honestly be.
   function renderPresentingHouseAd(): string {
     const month = new Date().toLocaleDateString('en-GB', { month: 'long' })
     const subject = encodeURIComponent(`Advertising in the What's On Guide`)
+    const href = `mailto:${B.newsEmail}?subject=${subject}`
     return `
-  <tr><td style="padding:0;background-color:${C.page};">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${C.page}" style="background-color:${C.page};border-top:3px dashed ${C.pink};">
-      <tr><td align="center" style="padding:22px 24px 6px 24px;">
-        <p style="margin:0;font-family:${F.body};font-size:11px;line-height:1.2;letter-spacing:1px;text-transform:uppercase;color:${C.pink};font-weight:bold;">This space</p>
-      </td></tr>
-      <tr><td align="center" style="padding:6px 24px 0 24px;">
-        <h3 style="margin:0;font-family:${F.heading};font-size:24px;line-height:1.25;color:${C.purple};font-weight:bold;">Want to feature your business?</h3>
-      </td></tr>
-      <tr><td align="center" style="padding:10px 24px 0 24px;">
-        <p style="margin:0;font-family:${F.body};font-size:15px;line-height:1.55;color:${C.body};text-align:center;">One business per edition reaches 1,800+ Greenwich parents right here.</p>
-      </td></tr>
-      <tr><td align="center" style="padding:18px 24px 26px 24px;">
-        <!--[if mso]>
-        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="mailto:${B.newsEmail}?subject=${subject}" style="v-text-anchor:middle;width:220px;height:44px;" arcsize="20%" strokecolor="${C.pink}" fillcolor="${C.page}">
-          <w:anchorlock/>
-          <center style="color:#d1067f;font-family:arial,sans-serif;font-size:15px;font-weight:bold;">Talk to us about ${month}</center>
-        </v:roundrect>
-        <![endif]-->
-        <!--[if !mso]><!-- -->
-        <a href="mailto:${B.newsEmail}?subject=${subject}" style="display:inline-block;background-color:${C.page};color:#d1067f;border:2px solid ${C.pink};font-family:${F.body};font-size:15px;font-weight:bold;text-decoration:none;padding:11px 22px;border-radius:8px;mso-hide:all;">Talk to us about ${month} &rarr;</a>
-        <!--<![endif]-->
+  <tr><td style="padding:0 24px 12px 24px;background-color:${C.page};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.pinkTint}" style="background-color:${C.pinkTint};border-collapse:collapse;border:1px dashed ${C.pink};border-radius:16px;">
+      <tr><td align="center" style="padding:30px 32px;">
+        ${eyebrow('This space', C.pinkText)}
+        <div style="font-family:${F.heading};font-weight:700;font-size:22px;line-height:30px;color:${C.dark};padding-top:8px;">Want to feature your business?</div>
+        <div style="font-family:${F.body};font-size:15px;line-height:24px;color:${C.body};padding-top:8px;">One business per edition reaches 1,800+ Greenwich parents here.</div>
+        <div style="padding-top:10px;">
+          <a href="${href}" style="font-family:${F.body};font-weight:700;font-size:15px;line-height:44px;color:${C.pinkText};text-decoration:none;border-bottom:2px solid ${C.pink};">Talk to us about ${month} &rarr;</a>
+        </div>
       </td></tr>
     </table>
   </td></tr>`
   }
 
-  function renderPresentingBlock(block: PresentingBlock, advertiserIn: AdvertiserData | null, editionDate = ''): string {
+  // The When / Price / Where table. Rows appear only when the booking carries
+  // them (migration 033), so a booking taken before it renders as description
+  // only rather than as three empty labels.
+  function presentingDetails(advertiser: AdvertiserData, blockId: string): string {
+    const rows: Array<[string, string, string]> = [
+      ['When', advertiser.event_when || '', 'event_when'],
+      ['Price', advertiser.event_price || '', 'event_price'],
+      ['Where', advertiser.event_where || '', 'event_where'],
+    ]
+    const present = rows.filter(([, value]) => value)
+    if (present.length === 0) return ''
+    return `
+        <tr><td style="padding:10px 20px 0 20px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:${F.body};font-size:14px;line-height:22px;color:${C.body};">
+            ${present
+              .map(
+                ([label, value, field]) => `<tr>
+              <td width="86" valign="top" style="width:86px;padding:5px 0;font-family:${F.body};font-weight:700;color:${C.muted};font-size:12px;letter-spacing:0.025em;text-transform:uppercase;">${label}</td>
+              <td valign="top" style="padding:5px 0;"${editAttr(blockId, field)}>${escapeHtml(value)}</td>
+            </tr>`
+              )
+              .join('')}
+          </table>
+        </td></tr>`
+  }
+
+  function renderPresentingBlock(
+    block: PresentingBlock,
+    advertiserIn: AdvertiserData | null,
+    editionDate = ''
+  ): string {
     if (!block.enabled) return ''
-    // Merge overrides on top of the resolved advertiser
     const advertiser: AdvertiserData | null = advertiserIn
       ? { ...advertiserIn, ...(block.overrides || {}) }
       : block.overrides && Object.keys(block.overrides).length > 0
@@ -752,58 +1034,62 @@ export function createRenderers(
 
     const advertiserName = escapeHtml(advertiser.advertiser_name || '')
     const description = escapeHtml(advertiser.event_description || '')
-    const websiteUrl = trackedUrl(advertiser.event_url || '', advertiser.id, editionDate)
+    const href = trackedUrl(advertiser.event_url || '', advertiser.id, editionDate)
     const isBrand = Boolean(advertiser.is_brand_sponsor)
-
     const headline = isBrand
       ? advertiserName
       : escapeHtml(advertiser.event_title || advertiser.advertiser_name || '')
+    const ctaLabel = escapeHtml(
+      advertiser.cta_label || (isBrand ? 'Visit the website' : 'Find out more')
+    )
+    const plate = escapeHtml(advertiser.logo_bg || C.card)
 
-    const eyebrow = isBrand
-      ? 'Proudly supported by'
-      : `Presented by ${advertiserName}`
+    // Brand mode shows the logo on its plate at its own size; event mode shows the
+    // photograph full-bleed across the card.
+    const media = advertiser.image_url
+      ? isBrand
+        ? `<tr><td align="center" bgcolor="${plate}" style="background-color:${plate};padding:26px 20px 6px 20px;">
+          <img src="${escapeHtml(advertiser.image_url)}" width="${SUPPORTER_LOGO.width}" height="${SUPPORTER_LOGO.height}" alt="${advertiserName}" style="display:block;width:${SUPPORTER_LOGO.width}px;max-width:${SUPPORTER_LOGO.width}px;height:${SUPPORTER_LOGO.height}px;border:0;outline:none;text-decoration:none;border-radius:12px;margin:0 auto;"${editAttr(block.id, 'image_url')}>
+        </td></tr>`
+        : `<tr><td style="padding:0;font-size:0;line-height:0;">
+          <img src="${escapeHtml(advertiser.image_url)}" width="${PRESENTING_IMAGE.width}" alt="${advertiserName}" style="display:block;width:100%;max-width:${PRESENTING_IMAGE.width}px;height:auto;border:0;outline:none;text-decoration:none;"${editAttr(block.id, 'image_url')}>
+        </td></tr>`
+      : ''
 
-    const imageAlt = advertiserName || 'Sponsor'
-    let leftColumn: string
-    if (advertiser.image_url) {
-      const imgTag = `<img src="${escapeHtml(advertiser.image_url)}" width="240" alt="${imageAlt}" style="display:block;width:100%;max-width:240px;height:auto;border:0;outline:none;text-decoration:none;"${editAttr(block.id, 'image_url')}>`
-      leftColumn = websiteUrl
-        ? `<a href="${escapeHtml(websiteUrl)}" target="_blank" style="text-decoration:none;">${imgTag}</a>`
-        : imgTag
-    } else {
-      leftColumn = `<div style="font-family:${F.heading};font-size:26px;line-height:1.2;color:${C.pink};font-weight:bold;text-align:center;padding:20px 8px;"${editAttr(block.id, 'advertiser_name')}>${advertiserName}</div>`
-    }
-
-    const cta =
-      !isBrand && websiteUrl
-        ? `<!--[if mso]>
-        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${escapeHtml(websiteUrl)}" style="v-text-anchor:middle;width:119px;height:42px;" arcsize="20%" strokecolor="${C.blue}" fillcolor="${C.blue}">
-          <w:anchorlock/>
-          <center style="color:#ffffff;font-family:arial,sans-serif;font-size:16px;font-weight:bold;">Tickets</center>
-        </v:roundrect>
-        <![endif]-->
-        <!--[if !mso]><!-- -->
-        <a href="${escapeHtml(websiteUrl)}" target="_blank" style="display:inline-block;background-color:${C.blue};color:#ffffff;font-family:${F.body};font-size:16px;font-weight:bold;text-decoration:none;padding:12px 22px;border-radius:8px;mso-hide:all;"${editAttr(block.id, 'event_url')}>Tickets</a>
-        <!--<![endif]-->`
-        : ''
+    // One anchor around the whole card: tier 1 is sold on "one click target, one
+    // number to report". Outlook's Word engine will only make the inline content
+    // clickable, which is why the CTA line sits inside as styled text rather than
+    // as a nested anchor -- an <a> inside an <a> is invalid and Gmail drops it.
+    const card = `
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.card}" style="background-color:${C.card};border-collapse:collapse;border:1px solid ${C.hairline};border-top:3px solid ${C.pink};border-radius:16px;">
+        <tr><td bgcolor="${C.pinkTint}" style="background-color:${C.pinkTint};padding:9px 20px;font-family:${F.body};font-weight:700;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:${C.pinkText};border-radius:16px 16px 0 0;">
+          ${isBrand ? 'Proudly supported by &middot; paid placement' : 'Presenting partner &middot; paid placement'}
+        </td></tr>
+        ${media}
+        <tr><td style="padding:20px 20px 6px 20px;">
+          <div style="font-family:${F.heading};font-weight:700;font-size:21px;line-height:28px;color:${C.dark};"${editAttr(block.id, isBrand ? 'advertiser_name' : 'event_title')}>${headline}</div>
+          ${description ? `<div style="font-family:${F.body};font-size:15px;line-height:24px;color:${C.body};padding-top:6px;"${editAttr(block.id, 'event_description')}>${description}</div>` : ''}
+        </td></tr>
+        ${isBrand ? '' : presentingDetails(advertiser, block.id)}
+        ${
+          href
+            ? `<tr><td bgcolor="${C.card}" style="background-color:${C.card};padding:14px 20px 16px 20px;border-top:1px solid ${C.hairline};">
+          <span style="font-family:${F.body};font-weight:700;font-size:15px;line-height:22px;color:${C.pinkText};border-bottom:2px solid ${C.pink};padding-bottom:2px;"${editAttr(block.id, 'cta_label')}>${ctaLabel} &rarr;</span>
+        </td></tr>`
+            : ''
+        }
+      </table>`
 
     return `
-  <tr><td style="padding:0;background-color:${C.page};">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${C.lavender}" style="background-color:${C.lavender};">
-      <tr>
-        <td width="50%" valign="middle" align="center" style="padding:24px 12px 24px 20px;" class="gpc-col-50">
-          ${leftColumn}
-        </td>
-        <td width="50%" valign="top" style="padding:24px 20px 24px 12px;" class="gpc-col-50">
-          <p style="margin:0 0 6px 0;font-family:${F.body};font-size:13px;line-height:1.3;color:${C.muted};"${editAttr(block.id, 'advertiser_name')}><em>${eyebrow}</em></p>
-          <h4 style="margin:0 0 10px 0;font-family:${F.heading};font-size:20px;line-height:1.25;color:${C.pink};font-weight:bold;"${editAttr(block.id, 'event_title')}>${headline}</h4>
-          ${description ? `<p style="margin:0 0 14px 0;font-family:${F.body};font-size:14px;line-height:1.55;color:${C.body};"${editAttr(block.id, 'event_description')}>${description}</p>` : ''}
-          ${cta}
-        </td>
-      </tr>
-    </table>
+  <tr><td style="padding:0 24px 8px 24px;background-color:${C.page};">
+    ${href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer sponsored" style="display:block;text-decoration:none;color:${C.black};">${card}</a>` : card}
+  </td></tr>
+  <tr><td style="padding:0 24px 4px 24px;background-color:${C.page};font-family:${F.body};font-size:11px;line-height:18px;color:${C.faint};">
+    Paid placement. GPC does not run this.
   </td></tr>`
   }
+
+  // ---------- Donation strip ----------
 
   function renderDonationStripBlock(block: DonationStripBlock): string {
     if (!block.enabled) return ''
@@ -813,23 +1099,23 @@ export function createRenderers(
       block.message || 'A big thank you to everyone who has bought us coffees!'
     )
     return `
-  <tr><td style="padding:12px 20px 18px 20px;background-color:${C.page};">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${C.paleBlue}" style="background-color:${C.paleBlue};">
-      <tr><td align="center" style="padding:16px 20px;">
-        <p style="margin:0;font-family:${F.body};font-size:16px;line-height:1.5;color:${C.black};text-align:center;"${editAttr(block.id, 'message')}>
-          <strong>${messagePrefix} &#x1F970;</strong> You can now
-          <a href="${linkUrl}" target="_blank" rel="noopener noreferrer" style="color:${C.blue};text-decoration:underline;"${editAttr(block.id, 'linkLabel')}><strong>${linkLabel}</strong></a>
-          <strong> to say thanks for the newsletter.</strong>
-        </p>
+  <tr><td style="padding:12px 24px 18px 24px;background-color:${C.page};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.card}" style="background-color:${C.card};border-collapse:collapse;border:1px solid ${C.hairline};border-radius:16px;">
+      <tr><td align="center" style="padding:18px 20px;">
+        <div style="font-family:${F.body};font-size:15px;line-height:24px;color:${C.body};text-align:center;"${editAttr(block.id, 'message')}>
+          <strong style="color:${C.dark};">${messagePrefix} &#x1F970;</strong>
+          <a href="${linkUrl}" target="_blank" rel="noopener noreferrer" style="color:${C.pinkText};text-decoration:underline;font-weight:700;"${editAttr(block.id, 'linkLabel')}>${linkLabel}</a>
+        </div>
       </td></tr>
     </table>
   </td></tr>`
   }
 
+  // ---------- Regulars ----------
+
   function renderRegularsBlock(block: RegularsBlock, resolved: EventData[]): string {
     if (!block.enabled || !resolved || resolved.length === 0) return ''
 
-    // Apply per-row overrides and drop excluded rows
     const overrides = block.overrides || {}
     const merged: EventData[] = []
     for (const ev of resolved) {
@@ -840,6 +1126,9 @@ export function createRenderers(
     }
     if (merged.length === 0) return ''
 
+    // Sunday is 0 in the column but reads last in a week that starts on Monday,
+    // and a row with no day sorts to the end. Twin of regularSortOrder in
+    // src/lib/editionGroups.js, which orders the same rows on the web page.
     const sortOrder = (d: number | null | undefined) => {
       if (d === null || d === undefined) return 99
       return d === 0 ? 7 : d
@@ -851,10 +1140,10 @@ export function createRenderers(
         const parts: string[] = []
         const evId = ev.id || ''
         if (ev.is_free) {
-          parts.push(`<span style="color:${C.pink};"${editAttr(block.id, 'price', evId)}><strong>FREE</strong></span>`)
+          parts.push(`<span style="color:${C.pinkText};"${editAttr(block.id, 'price', evId)}><strong>FREE</strong></span>`)
           parts.push(`<span style="color:${C.black};"><strong> </strong>- </span>`)
         } else if (ev.price) {
-          parts.push(`<span style="color:${C.pink};"${editAttr(block.id, 'price', evId)}><strong>${escapeHtml(ev.price)}</strong></span>`)
+          parts.push(`<span style="color:${C.pinkText};"${editAttr(block.id, 'price', evId)}><strong>${escapeHtml(ev.price)}</strong></span>`)
           parts.push(`<span style="color:${C.black};"><strong> </strong>- </span>`)
         }
 
@@ -875,7 +1164,7 @@ export function createRenderers(
 
         if (ev.url) {
           parts.push(
-            ` <span style="color:${C.black};">- </span><a href="${escapeHtml(ev.url)}" target="_blank" rel="noopener noreferrer" style="color:${C.blue};text-decoration:underline;"${editAttr(block.id, 'url', evId)}><strong>Info</strong></a>`
+            ` <span style="color:${C.black};">- </span><a href="${escapeHtml(ev.url)}" target="_blank" rel="noopener noreferrer" style="color:${C.pinkText};text-decoration:underline;"${editAttr(block.id, 'url', evId)}><strong>Info</strong></a>`
           )
         }
 
@@ -884,190 +1173,167 @@ export function createRenderers(
       .join('')
 
     return `
-  <tr><td style="padding:18px 20px 12px 20px;background-color:${C.page};">
-    <h3 style="margin:0 0 8px 0;font-family:${F.heading};font-size:26px;line-height:1.2;color:${C.skyBlue};font-weight:bold;"${editAttr(block.id)}>Regular activities</h3>
-    <p style="margin:0 0 12px 0;font-family:${F.body};font-size:14px;line-height:1.55;color:${C.black};"><em>Some only operate during term-time. Please check before travelling.</em></p>
+  <tr><td style="padding:18px 24px 12px 24px;background-color:${C.page};">
+    <div style="font-family:${F.heading};font-weight:700;font-size:24px;line-height:30px;color:${C.dark};"${editAttr(block.id)}>Regular activities</div>
+    ${pinkRule('left')}
+    <p style="margin:12px 0 12px 0;font-family:${F.body};font-size:14px;line-height:1.55;color:${C.muted};">Some only run during term-time. Please check before travelling.</p>
     ${rows}
   </td></tr>`
   }
 
-  // The unsold supporter slot. Smaller than the presenting house ad on purpose:
-  // it is a smaller offer, and two identical full-width pitches in one email
-  // would read as begging rather than inviting.
-  function renderSupporterHouseTile(): string {
-    const subject = encodeURIComponent(`Supporting the What's On Guide`)
-    return `
-  <tr><td style="padding:20px 20px 24px 20px;background-color:${C.page};">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border:2px dashed ${C.pink};border-radius:8px;">
-      <tr><td align="center" style="padding:20px 18px;">
-        <p style="margin:0;font-family:${F.body};font-size:11px;line-height:1.2;letter-spacing:1px;text-transform:uppercase;color:${C.pink};font-weight:bold;">Spaces left this week</p>
-        <p style="margin:8px 0 0 0;font-family:${F.heading};font-size:19px;line-height:1.3;color:${C.purple};font-weight:bold;">Put your logo in front of local parents</p>
-        <p style="margin:12px 0 0 0;font-family:${F.body};font-size:15px;line-height:1.5;color:${C.body};">
-          <a href="mailto:${B.newsEmail}?subject=${subject}" style="color:#d1067f;text-decoration:underline;font-weight:bold;">Talk to us about supporting the guide &rarr;</a>
-        </p>
-      </td></tr>
-    </table>
-  </td></tr>`
-  }
+  // ---------- Supporters: paid tier 2 ----------
 
-  function renderSupporterBlock(block: SupporterBlock, advertiserIn: AdvertiserData | null, editionDate = ''): string {
-    if (!block.enabled) return ''
-    const advertiser: AdvertiserData | null = advertiserIn
-      ? { ...advertiserIn, ...(block.overrides || {}) }
-      : block.overrides && Object.keys(block.overrides).length > 0
-        ? (block.overrides as AdvertiserData)
-        : null
-    // Same rule as the presenting slot: an unsold supporter slot is an offer at
-    // the same footprint, not a missing section.
-    if (!advertiser) return renderSupporterHouseTile()
-
+  function supporterTile(advertiser: AdvertiserData, blockId: string, editionDate: string, span: 1 | 2): string {
     const name = escapeHtml(advertiser.advertiser_name || 'our supporter')
-    const quote = advertiser.event_description ? escapeHtml(advertiser.event_description) : ''
-    const linkUrl = trackedUrl(advertiser.event_url || '', advertiser.id, editionDate) || '#'
-    const emailHref = advertiser.contact_email
-      ? `mailto:${advertiser.contact_email}?subject=I%20saw%20your%20ad%20in%20the%20GPC%20What's%20On%20Guide`
-      : '#'
+    const href = escapeHtml(trackedUrl(advertiser.event_url || '', advertiser.id, editionDate) || siteUrl('advertise'))
+    // The plate is the td's bgcolor as well as the image's, so a blocked image
+    // (Gmail's default on first open) degrades to a tidy tile carrying the name,
+    // not a broken-image icon on a white hole.
+    const plate = escapeHtml(advertiser.logo_bg || C.card)
+    const inner = advertiser.image_url
+      ? `<img src="${escapeHtml(advertiser.image_url)}" width="${SUPPORTER_ROW_LOGO.width}" height="${SUPPORTER_ROW_LOGO.height}" alt="${name}" style="display:block;width:${SUPPORTER_ROW_LOGO.width}px;max-width:${SUPPORTER_ROW_LOGO.width}px;height:${SUPPORTER_ROW_LOGO.height}px;border:0;outline:none;text-decoration:none;margin:0 auto;"${editAttr(blockId, 'image_url', advertiser.id || '')}>`
+      : `<span style="font-family:${F.body};font-weight:700;font-size:15px;line-height:22px;color:${C.dark};"${editAttr(blockId, 'advertiser_name', advertiser.id || '')}>${name}</span>`
+    const colspan = span === 2 ? ' colspan="2"' : ''
+    const width = span === 2 ? '100%' : '50%'
+    return `<td${colspan} width="${width}" align="center" valign="middle" bgcolor="${plate}" style="width:${width};background-color:${plate};border:1px solid ${C.hairline};border-radius:12px;padding:12px 14px;">
+          <a href="${href}" target="_blank" rel="noopener noreferrer sponsored" style="display:block;text-decoration:none;">${inner}</a>
+        </td>`
+  }
 
-    // Both width and height are explicit: logos are normalised to SUPPORTER_LOGO
-    // at upload, so height:auto would only reintroduce the uneven-row problem.
-    // The plate is also the td's bgcolor, so a blocked image (Gmail's default on
-    // first open) degrades to a tidy tile carrying the alt text, not a broken icon.
-    const plate = escapeHtml(advertiser.logo_bg || '#ffffff')
-    const logo = advertiser.image_url
-      ? `<tr><td align="center" bgcolor="${plate}" style="padding:10px 0 12px 0;background-color:${plate};">
-        <a href="${escapeHtml(linkUrl)}" target="_blank" style="text-decoration:none;">
-          <img src="${escapeHtml(advertiser.image_url)}" width="${SUPPORTER_LOGO.width}" height="${SUPPORTER_LOGO.height}" alt="${name}" style="display:block;width:${SUPPORTER_LOGO.width}px;max-width:${SUPPORTER_LOGO.width}px;height:${SUPPORTER_LOGO.height}px;border:0;outline:none;text-decoration:none;border-radius:8px;margin:0 auto;"${editAttr(block.id, 'image_url')}>
-        </a>
-      </td></tr>`
-      : ''
+  function renderSupporterBlock(
+    block: SupporterBlock,
+    advertisersIn: AdvertiserData[],
+    editionDate = ''
+  ): string {
+    if (!block.enabled) return ''
+
+    const overrides = block.overrides || {}
+    const list = (advertisersIn || [])
+      .map((a) => (a.id && overrides[a.id] ? { ...a, ...overrides[a.id] } : a))
+      .filter((a) => a && (a.advertiser_name || a.image_url))
+
+    // Only what is sold. No house tile and no placeholder: below capacity the row
+    // simply gets shorter, and at zero the section is not rendered at all --
+    // heading, tiles, invitation and all. The unsold presenting slot above is
+    // already carrying the one "advertise with us" the edition needs.
+    if (list.length === 0) return ''
+
+    const rows: string[] = []
+    for (let i = 0; i < list.length; i += 2) {
+      const pair = list.slice(i, i + 2)
+      // A lone tile on the last row spans both columns rather than sitting beside
+      // an empty cell. A grid with a hole in it reads as broken.
+      const cells =
+        pair.length === 2
+          ? pair.map((a) => supporterTile(a, block.id, editionDate, 1)).join('')
+          : supporterTile(pair[0], block.id, editionDate, 2)
+      rows.push(`<tr>${cells}</tr>`)
+    }
+
+    const heading = escapeHtml(block.heading || 'Supported this week by')
+    const subject = encodeURIComponent(`Supporting the What's On Guide`)
 
     return `
-  <tr><td style="padding:20px 20px 24px 20px;background-color:${C.page};">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-      <tr><td align="center" style="padding:0 0 4px 0;">
-        <h4 style="margin:0;font-family:${F.heading};font-size:22px;line-height:1.2;color:${C.pink};font-weight:bold;"${editAttr(block.id)}>Give some love to our supporter!</h4>
-      </td></tr>
-      ${logo}
-      ${quote ? `<tr><td align="center" style="padding:0 20px 12px 20px;">
-        <p style="margin:0;font-family:${F.body};font-size:14px;line-height:1.55;color:${C.body};text-align:center;"${editAttr(block.id, 'event_description')}><em>&ldquo;${quote}&rdquo;</em></p>
-      </td></tr>` : ''}
-      <tr><td align="center" style="padding:8px 0 4px 0;">
-        <!--[if mso]>
-        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${escapeHtml(emailHref)}" style="v-text-anchor:middle;width:220px;height:48px;" arcsize="18%" strokecolor="${C.purple}" fillcolor="${C.purple}">
-          <w:anchorlock/>
-          <center style="color:#ffffff;font-family:arial,sans-serif;font-size:15px;font-weight:bold;">Email ${name.toUpperCase()}</center>
-        </v:roundrect>
-        <![endif]-->
-        <!--[if !mso]><!-- -->
-        <a href="${escapeHtml(emailHref)}" style="display:inline-block;background-color:${C.purple};color:#ffffff;font-family:${F.body};font-size:15px;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:8px;mso-hide:all;"${editAttr(block.id, 'contact_email')}>Email ${name}</a>
-        <!--<![endif]-->
-      </td></tr>
-      <tr><td align="center" style="padding:16px 0 0 0;">
-        <p style="margin:0;font-family:${F.body};font-size:15px;line-height:1.5;color:${C.body};text-align:center;">
-          <strong style="color:${C.pink};">Want to feature your business? Email us </strong>
-          <a href="mailto:${B.newsEmail}" style="color:${C.blue};text-decoration:underline;"><strong>${B.newsEmail}</strong></a>
-        </p>
-      </td></tr>
+  <tr><td align="center" style="padding:34px 24px 0 24px;background-color:${C.page};">
+    ${eyebrow(heading, C.muted, editAttr(block.id, 'heading'))}
+  </td></tr>
+  <tr><td style="padding:14px 18px 0 18px;background-color:${C.page};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;border-spacing:6px;">
+      ${rows.join('')}
     </table>
+  </td></tr>
+  <tr><td align="center" style="padding:16px 24px 4px 24px;background-color:${C.page};">
+    <a href="mailto:${B.newsEmail}?subject=${subject}" style="font-family:${F.body};font-size:14px;line-height:44px;color:${C.pinkText};text-decoration:underline;">Want to feature your business?</a>
   </td></tr>`
   }
+
+  // ---------- Footer ----------
 
   function renderFooterBlock(block: FooterBlock): string {
     if (!block.enabled) return ''
-    const cicText = escapeHtml(
-      block.cicText || 'Community Interest Company no. 16387545. SE10 9JT, London'
-    )
+    const cicText = escapeHtml(block.cicText || 'GPC CIC no. 16387545 · SE10 9JT London')
     const unsubscribeLabel = escapeHtml(block.unsubscribeLabel || 'No longer live in Greenwich?')
+    // Brevo's merge tag by default. The old renderer shipped a literal "#" here,
+    // so the unsubscribe link in every sent edition went nowhere -- which is a
+    // legal problem, not a cosmetic one. Configurable so it can be corrected
+    // without a deploy if the ESP tag differs.
+    const unsubscribeUrl = escapeHtml(block.unsubscribeUrl || '{{ unsubscribe }}')
     return `
-  <tr><td style="padding:0;background-color:${C.page};">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="${C.footer}" style="background-color:${C.footer};">
-      <tr><td align="center" style="padding:20px 20px 12px 20px;">
-        <a href="${B.instagramUrl}" target="_blank" style="text-decoration:none;">
-          <img src="${B.instagramIcon}" width="32" alt="Instagram" style="display:block;width:32px;max-width:32px;height:auto;border:0;outline:none;text-decoration:none;">
-        </a>
-      </td></tr>
-      <tr><td align="center" style="padding:0 20px 4px 20px;">
-        <a href="${B.websiteUrl}" target="_blank" style="font-family:${F.body};font-size:14px;color:${C.blue};text-decoration:underline;"><strong>www.gpccommunity.co.uk</strong></a>
-      </td></tr>
-      <tr><td align="center" style="padding:4px 20px;">
-        <p style="margin:0;font-family:${F.body};font-size:14px;line-height:1.55;color:${C.body};text-align:center;">Disclaimer: While we try to ensure accuracy, we take no responsibility for the information above. Please check before travelling.</p>
-      </td></tr>
-      <tr><td align="center" style="padding:8px 20px 2px 20px;">
-        <h4 style="margin:0;font-family:${F.heading};font-size:18px;line-height:1.2;color:${C.dark};font-weight:bold;">Greenwich Parents &amp; Carers</h4>
-      </td></tr>
-      <tr><td align="center" style="padding:2px 20px 12px 20px;">
-        <p style="margin:0;font-family:${F.body};font-size:14px;line-height:1.55;color:${C.body};text-align:center;"${editAttr(block.id, 'cicText')}>${cicText}</p>
-      </td></tr>
-      <tr><td align="center" style="padding:0 20px 20px 20px;">
-        <p style="margin:0;font-family:${F.body};font-size:13px;line-height:1.55;color:${C.body};text-align:center;"${editAttr(block.id, 'unsubscribeLabel')}><em>${unsubscribeLabel}</em> <a href="#" style="color:${C.blue};text-decoration:underline;">Unsubscribe</a></p>
+  <tr><td style="padding:18px 0 0 0;background-color:${C.page};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.footer}" style="background-color:${C.footer};border-collapse:collapse;">
+      <tr><td align="center" style="padding:28px 32px 30px 32px;font-family:${F.body};font-size:13px;line-height:22px;color:rgba(255,255,255,.6);text-align:center;">
+        <div style="font-family:${F.heading};font-weight:700;font-size:15px;line-height:22px;color:#ffffff;padding-bottom:10px;">Greenwich Parents &amp; Carers</div>
+        <div${editAttr(block.id, 'cicText')}>${cicText}</div>
+        <div><a href="${B.instagramUrl}" target="_blank" style="color:#ffffff;text-decoration:none;font-weight:700;line-height:44px;">${escapeHtml(B.instagramHandle)}</a></div>
+        <div style="padding-bottom:8px;"><a href="${B.websiteUrl}" target="_blank" style="color:rgba(255,255,255,.6);text-decoration:underline;">www.gpccommunity.co.uk</a></div>
+        <div style="font-size:12px;line-height:18px;">While we try to ensure accuracy, we take no responsibility for the information above. Please check before travelling.</div>
+        <div><span${editAttr(block.id, 'unsubscribeLabel')}>${unsubscribeLabel}</span> <a href="${unsubscribeUrl}" style="color:rgba(255,255,255,.6);text-decoration:underline;line-height:36px;">Unsubscribe</a></div>
       </td></tr>
     </table>
   </td></tr>`
   }
 
+  // ---------- Free-form blocks ----------
+
   function renderTextBlock(block: TextBlock): string {
-    if (!block.enabled || !block.htmlContent) return ''
-    const align = block.align || 'left'
-    const bgColor = block.bgColor || C.page
-    // htmlContent is already sanitised by the browser sanitiser before it reaches here
+    if (!block.enabled) return ''
+    const align = block.align === 'center' ? 'center' : 'left'
+    const bg = block.bgColor || C.page
     return `
-  <tr><td style="padding:12px 20px;background-color:${bgColor};">
-    <div style="font-family:${F.body};font-size:15px;line-height:1.6;color:${C.body};text-align:${align};"${editAttr(block.id, 'htmlContent')}>${block.htmlContent}</div>
+  <tr><td style="padding:12px 24px;background-color:${bg};">
+    <div style="font-family:${F.body};font-size:15px;line-height:1.6;color:${C.body};text-align:${align};"${editAttr(block.id, 'htmlContent')}>${block.htmlContent || ''}</div>
   </td></tr>`
   }
 
   function renderImageBlock(block: ImageBlock): string {
     if (!block.enabled || !block.imageUrl) return ''
-    const align = block.align || 'center'
-    const caption = block.caption
-      ? `<p style="margin:8px 0 0 0;font-family:${F.body};font-size:13px;line-height:1.4;color:${C.muted};text-align:${align};"${editAttr(block.id, 'caption')}><em>${escapeHtml(block.caption)}</em></p>`
-      : ''
-    const width = align === 'full' ? 560 : 400
-    const imgTag = `<img src="${escapeHtml(block.imageUrl)}" width="${width}" alt="${escapeHtml(block.caption || '')}" style="display:block;width:100%;max-width:${width}px;height:auto;border:0;outline:none;text-decoration:none;margin:0 auto;"${editAttr(block.id, 'imageUrl')}>`
-    const wrapped = block.linkUrl
-      ? `<a href="${escapeHtml(block.linkUrl)}" target="_blank" style="text-decoration:none;">${imgTag}</a>`
-      : imgTag
+    const width = block.align === 'full' ? 552 : 400
+    const align = block.align === 'left' ? 'left' : 'center'
+    const img = `<img src="${escapeHtml(block.imageUrl)}" width="${width}" alt="${escapeHtml(block.caption || '')}" style="display:block;width:100%;max-width:${width}px;height:auto;border:0;outline:none;text-decoration:none;border-radius:12px;margin:${align === 'center' ? '0 auto' : '0'};"${editAttr(block.id, 'imageUrl')}>`
     return `
-  <tr><td align="${align === 'full' ? 'center' : align}" style="padding:12px 20px;background-color:${C.page};">
-    ${wrapped}
-    ${caption}
+  <tr><td align="${align}" style="padding:12px 24px;background-color:${C.page};">
+    ${block.linkUrl ? `<a href="${escapeHtml(block.linkUrl)}" target="_blank" style="text-decoration:none;">${img}</a>` : img}
+    ${block.caption ? `<div style="font-family:${F.body};font-size:13px;line-height:1.4;color:${C.muted};font-style:italic;padding-top:8px;text-align:${align};"${editAttr(block.id, 'caption')}>${escapeHtml(block.caption)}</div>` : ''}
   </td></tr>`
   }
 
   function renderCtaBlock(block: CtaBlock): string {
-    if (!block.enabled || !block.url) return ''
-    const align = block.align || 'center'
-    const label = escapeHtml(block.label || 'Learn more')
-    const bg = block.bgColor || C.blue
-    const text = block.textColor || '#ffffff'
+    if (!block.enabled || !block.label) return ''
+    const bg = block.bgColor || C.pink
+    const fg = block.textColor || '#ffffff'
+    const align = block.align === 'left' ? 'left' : 'center'
+    const url = escapeHtml(block.url || '#')
+    const label = escapeHtml(block.label)
     return `
-  <tr><td align="${align}" style="padding:16px 20px;background-color:${C.page};">
+  <tr><td align="${align}" style="padding:16px 24px;background-color:${C.page};">
     <!--[if mso]>
-    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${escapeHtml(block.url)}" style="v-text-anchor:middle;width:180px;height:44px;" arcsize="18%" strokecolor="${bg}" fillcolor="${bg}">
+    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${url}" style="v-text-anchor:middle;width:200px;height:46px;" arcsize="50%" stroke="f" fillcolor="${bg}">
       <w:anchorlock/>
-      <center style="color:${text};font-family:arial,sans-serif;font-size:15px;font-weight:bold;">${label}</center>
+      <center style="color:${fg};font-family:arial,sans-serif;font-size:15px;font-weight:bold;">${label}</center>
     </v:roundrect>
     <![endif]-->
     <!--[if !mso]><!-- -->
-    <a href="${escapeHtml(block.url)}" target="_blank" style="display:inline-block;background-color:${bg};color:${text};font-family:${F.body};font-size:15px;font-weight:bold;text-decoration:none;padding:13px 26px;border-radius:8px;mso-hide:all;"${editAttr(block.id, 'label')}>${label}</a>
+    <a href="${url}" target="_blank" style="display:inline-block;background-color:${bg};color:${fg};font-family:${F.body};font-size:15px;font-weight:700;text-decoration:none;padding:13px 26px;border-radius:9999px;mso-hide:all;"${editAttr(block.id, 'label')}>${label}</a>
     <!--<![endif]-->
   </td></tr>`
   }
 
   function renderDividerBlock(block: DividerBlock): string {
     if (!block.enabled) return ''
-    const style = block.style || 'solid'
-    const color = block.color || C.muted
+    const style = block.style === 'dotted' ? 'dotted' : 'solid'
+    const color = block.color || C.hairline
     return `
-  <tr><td style="padding:8px 20px;background-color:${C.page};"${editAttr(block.id)}>
+  <tr><td style="padding:8px 24px;background-color:${C.page};">
     <div style="border-top:1px ${style} ${color};height:0;line-height:0;font-size:0;">&nbsp;</div>
   </td></tr>`
   }
 
+  // ---------- Dispatch and shell ----------
+
   function renderBlock(block: Block, metadata: NewsletterMetadata, resolved: ResolvedData): string {
     switch (block.type) {
       case 'masthead':
-        return renderMastheadBlock(block)
+        return renderMastheadBlock(block, metadata)
       case 'subscribe':
         return renderSubscribeBlock(block)
       case 'intro':
@@ -1111,12 +1377,19 @@ export function createRenderers(
         return renderRegularsBlock(block, events)
       }
       case 'supporter': {
-        const advertiser =
-          block.mode === 'manual' && block.advertiserId
-            ? resolved.advertisers[block.advertiserId] || null
-            : resolved.autoAdvertiserByBlockId[block.id] || null
-        return renderSupporterBlock(block, advertiser, metadata.weekOf)
+        // Manual mode names the businesses and their order; auto takes every logo
+        // booked for the week. Either way it is a list -- the block used to hold
+        // one advertiser, so a week that sold four showed one.
+        const advertisers =
+          block.mode === 'manual' && block.advertiserIds
+            ? block.advertiserIds
+                .map((id) => resolved.advertisers[id])
+                .filter((a): a is AdvertiserData => Boolean(a))
+            : resolved.autoAdvertisersByBlockId[block.id] || []
+        return renderSupporterBlock(block, advertisers, metadata.weekOf)
       }
+      case 'editionCta':
+        return renderEditionCtaBlock(block, metadata, resolved)
       case 'footer':
         return renderFooterBlock(block)
       case 'textBlock':
@@ -1133,11 +1406,21 @@ export function createRenderers(
   }
 
   function renderNewsletter(config: NewsletterConfig, resolved: ResolvedData): string {
-    const sections = config.blocks.map((block) => renderBlock(block, config.metadata, resolved)).join('')
+    const sections = config.blocks
+      .map((block) => renderBlock(block, config.metadata, resolved))
+      .join('')
 
-    // Preheader: pull from the first intro block's message if present
+    // The inbox preview line. An explicit preheader wins; otherwise the intro is
+    // borrowed, which is what the old renderer always did. Neither is allowed to
+    // be empty, or the client fills the space with whatever markup comes first.
     const introBlock = config.blocks.find((b): b is IntroBlock => b.type === 'intro' && b.enabled)
-    const preheader = escapeHtml(introBlock?.message || '').slice(0, 120)
+    const count = Number.isInteger(resolved?.editionEventCount) ? resolved.editionEventCount : 0
+    const fallback = count > 0
+      ? `${count} things to do with the children this week.`
+      : "This week's guide to what's on for families in Greenwich."
+    const preheader = escapeHtml(
+      config.metadata.preheader || introBlock?.message || fallback
+    ).slice(0, 140)
 
     const editStyles = editMode
       ? `
@@ -1163,7 +1446,7 @@ export function createRenderers(
   table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
   img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
   body { margin: 0 !important; padding: 0 !important; width: 100% !important; background-color: ${C.page}; }
-  a { color: ${C.blue}; }
+  a { color: ${C.pinkText}; }
   @media only screen and (max-width: 620px) {
     .gpc-shell { width: 100% !important; }
     .gpc-col-50 { display: block !important; width: 100% !important; box-sizing: border-box !important; }
@@ -1195,6 +1478,8 @@ export function createRenderers(
     renderEventRowContent,
     renderEventSectionBlock,
     renderPresentingBlock,
+    renderPresentingHouseAd,
+    renderEditionCtaBlock,
     renderDonationStripBlock,
     renderRegularsBlock,
     renderSupporterBlock,
@@ -1204,13 +1489,4 @@ export function createRenderers(
     renderCtaBlock,
     renderDividerBlock,
   }
-}
-
-// Convenience: default renderer with no overrides
-export function renderNewsletterWithDefaults(
-  config: NewsletterConfig,
-  resolved: ResolvedData
-): string {
-  const renderers = createRenderers(config.theme)
-  return renderers.renderNewsletter(config, resolved)
 }

@@ -1,8 +1,17 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useParams, Link } from 'react-router'
 import { ORG, NEWSLETTER } from '../utils/constants'
 import { useEdition } from '../hooks/useEdition'
-import { groupEvents, priceLabel, dayParts, supporterSlots, clickHref } from '../lib/editionGroups'
+import {
+  groupEvents,
+  regularsGroup,
+  regularDayParts,
+  REGULARS_KEY,
+  priceLabel,
+  dayParts,
+  supporterSlots,
+  clickHref,
+} from '../lib/editionGroups'
 
 // One week of the What's On guide, at its own permanent address.
 //
@@ -24,6 +33,12 @@ function formatEditionDate(iso) {
 
 function eventMeta(event) {
   return [event.location || event.venue, event.time].filter(Boolean).join(' · ')
+}
+
+// A weekly session has no date and no `time`; when it happens lives in
+// `recurring_time` instead.
+function regularMeta(event) {
+  return [event.location || event.venue, event.recurring_time].filter(Boolean).join(' · ')
 }
 
 function SectionShell({ children }) {
@@ -63,6 +78,14 @@ function PresentingSlot({ advertiser, editionDate }) {
   if (!advertiser) return <PresentingHouseAd />
 
   const isBrand = Boolean(advertiser.is_brand_sponsor)
+  // Migration 033. Rows are dropped when empty rather than printed blank: a
+  // booking taken before those columns existed has none of them.
+  const details = [
+    ['When', advertiser.event_when],
+    ['Price', advertiser.event_price],
+    ['Where', advertiser.event_where],
+  ].filter(([, value]) => Boolean(value))
+  const ctaLabel = advertiser.cta_label || (isBrand ? 'Visit website' : 'Find out more')
 
   return (
     <SectionShell>
@@ -95,9 +118,21 @@ function PresentingSlot({ advertiser, editionDate }) {
                 {advertiser.event_description}
               </p>
             )}
+            {!isBrand && details.length > 0 && (
+              <dl className="grid grid-cols-[76px_1fr] gap-x-4 gap-y-2.5 mt-5 text-[15px] leading-normal text-gray-600">
+                {details.map(([label, value]) => (
+                  <Fragment key={label}>
+                    <dt className="font-bold text-xs uppercase tracking-[0.025em] text-gray-500 pt-0.5">
+                      {label}
+                    </dt>
+                    <dd className="m-0">{value}</dd>
+                  </Fragment>
+                ))}
+              </dl>
+            )}
             <div className="flex flex-wrap items-center gap-4 mt-6">
               <span className="inline-flex items-center justify-center min-h-[44px] px-6 py-3 border-2 border-primary rounded-full bg-white text-[#d1067f] font-bold text-[15px]">
-                {isBrand ? 'Visit website →' : 'Find out more →'}
+                {ctaLabel} →
               </span>
               <span className="text-xs text-gray-400">
                 Paid placement. GPC does not run this.
@@ -276,6 +311,48 @@ function EventRow({ event }) {
   )
 }
 
+// The same row as EventRow with the date block swapped for "EVERY / MON". Kept as
+// its own component rather than a prop on EventRow: the two differ in what the
+// left block reads from and in which field carries the time, and threading both
+// through one component made every line of it conditional.
+function RegularRow({ event }) {
+  const { dow, day } = regularDayParts(event)
+  const price = priceLabel(event)
+  return (
+    <a
+      href={event.url || '#'}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="grid grid-cols-[52px_1fr] sm:grid-cols-[68px_1fr_132px] gap-3 sm:gap-5 items-center px-4 sm:px-5 py-3 border-t border-gray-50 first:border-t-0 min-h-[44px] hover:bg-warm focus:bg-warm focus:outline-none"
+    >
+      <div className="text-center leading-tight">
+        <div className="font-bold text-[11px] uppercase tracking-wider text-gray-400">{dow}</div>
+        <div className="font-heading font-bold text-lg text-dark mt-0.5">{day}</div>
+      </div>
+      <div className="min-w-0">
+        <div className="font-bold text-base leading-snug text-dark">{event.title}</div>
+        <div className="text-[13px] leading-snug text-gray-500 mt-0.5">{regularMeta(event)}</div>
+        <span
+          className="sm:hidden inline-block font-bold text-xs px-2.5 py-1 rounded-full mt-1.5 whitespace-nowrap"
+          style={{ backgroundColor: price.bg, color: price.fg }}
+          title={price.full || undefined}
+        >
+          {price.text}
+        </span>
+      </div>
+      <div className="hidden sm:block text-right">
+        <span
+          className="inline-block font-bold text-[13px] px-3 py-1 rounded-full whitespace-nowrap"
+          style={{ backgroundColor: price.bg, color: price.fg }}
+          title={price.full || undefined}
+        >
+          {price.text}
+        </span>
+      </div>
+    </a>
+  )
+}
+
 function EditionSkeleton() {
   return (
     <SectionShell>
@@ -316,7 +393,7 @@ function EditionMessage({ title, children }) {
 
 export default function WhatsOnEdition() {
   const { date } = useParams()
-  const { events, presenting, supporters, loading, error } = useEdition(date)
+  const { events, regulars, presenting, supporters, loading, error } = useEdition(date)
 
   if (loading) return <EditionSkeleton />
 
@@ -329,7 +406,10 @@ export default function WhatsOnEdition() {
     )
   }
 
-  const groups = groupEvents(events)
+  // Regulars are appended, never interleaved: they are the one group with no date,
+  // so they read as a reference list at the end rather than as part of the week.
+  const groups = [...groupEvents(events), regularsGroup(regulars)].filter(Boolean)
+  const totalCount = events.length + regulars.length
 
   if (groups.length === 0) {
     return (
@@ -353,7 +433,7 @@ export default function WhatsOnEdition() {
           </h1>
           <div className="w-16 h-1 bg-primary rounded-full mx-auto mt-5" />
           <p className="text-base sm:text-lg leading-relaxed text-gray-700 max-w-[620px] mx-auto mt-4 text-pretty">
-            {events.length} {events.length === 1 ? 'event' : 'events'} this week and beyond, with
+            {totalCount} {totalCount === 1 ? 'event' : 'events'} this week and beyond, with
             times, prices and booking links. Free things are marked.
           </p>
         </div>
@@ -396,9 +476,13 @@ export default function WhatsOnEdition() {
                 <div className="w-16 h-1 bg-primary rounded-full mt-3 mb-1" />
                 <div className="text-sm text-gray-500 mb-2.5">{g.note}</div>
                 <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-                  {g.events.map((event) => (
-                    <EventRow key={event.id} event={event} />
-                  ))}
+                  {g.events.map((event) =>
+                    g.key === REGULARS_KEY ? (
+                      <RegularRow key={event.id} event={event} />
+                    ) : (
+                      <EventRow key={event.id} event={event} />
+                    )
+                  )}
                 </div>
               </section>
             ))}

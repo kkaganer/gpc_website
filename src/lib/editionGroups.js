@@ -216,3 +216,59 @@ export function dayParts(iso) {
     day: String(d.getUTCDate()),
   }
 }
+
+const DAY_NAMES_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** The group key the regular activities section uses, in the nav and the anchor. */
+export const REGULARS_KEY = 'regulars'
+
+// Day order for recurring rows. Sunday is 0 in the column but reads last in a
+// week that starts on Monday, and a row with no day at all sorts to the end
+// rather than to Sunday. Same rule the newsletter's regulars block has always
+// used -- kept identical so the email and the page list them in one order.
+function regularSortOrder(day) {
+  if (day === null || day === undefined) return 99
+  return day === 0 ? 7 : day
+}
+
+/**
+ * The "Regular activities" group.
+ *
+ * Kept apart from `groupEvents` rather than folded into it: a recurring row has
+ * no date, so it cannot be sorted, dated or grouped by the same rules, and the
+ * curated category map would scatter one weekly playgroup across four headings.
+ * It is always last, and always its own section.
+ *
+ * @param {Array} regulars rows where is_recurring is true
+ * @returns {{key: string, label: string, note: string, count: number, events: Array} | null}
+ */
+export function regularsGroup(regulars) {
+  if (!Array.isArray(regulars) || regulars.length === 0) return null
+  const events = [...regulars].sort(
+    (a, b) => regularSortOrder(a?.day_of_week) - regularSortOrder(b?.day_of_week)
+  )
+  return {
+    key: REGULARS_KEY,
+    label: 'Regular activities',
+    note: 'Every week, all term. Some only run in term-time, so check before you travel.',
+    count: events.length,
+    events,
+  }
+}
+
+/**
+ * The day block for a recurring row: "EVERY" over "MON".
+ *
+ * The twin of `dayParts`, which needs a date. A weekly session has a weekday and
+ * no date at all, so the same two-line block is filled from `day_of_week`.
+ *
+ * @param {{day_of_week?: number | null}} event
+ * @returns {{dow: string, day: string}}
+ */
+export function regularDayParts(event) {
+  const day = event?.day_of_week
+  if (day === null || day === undefined || !DAY_NAMES_SHORT[day]) {
+    return { dow: 'EVERY', day: 'Week' }
+  }
+  return { dow: 'EVERY', day: DAY_NAMES_SHORT[day] }
+}

@@ -91,7 +91,7 @@ export default function EventOverrideCard({
             onReset={() => onFieldReset('venue')}
             placeholder="Venue (optional)"
             variant="single"
-            style={{ fontSize: '13px', color: '#6b6b7d' }}
+            style={{ fontSize: '13px', color: '#6a7282' }}
             focusTrigger={trigger('venue')}
           />
         </div>
@@ -108,7 +108,7 @@ export default function EventOverrideCard({
             onReset={() => onFieldReset('date')}
             placeholder="YYYY-MM-DD"
             variant="single"
-            style={{ fontSize: '12px', color: '#6b6b7d' }}
+            style={{ fontSize: '12px', color: '#6a7282' }}
             focusTrigger={trigger('date')}
           />
         </div>
@@ -121,7 +121,7 @@ export default function EventOverrideCard({
             onReset={() => onFieldReset('time')}
             placeholder="e.g. 10am"
             variant="single"
-            style={{ fontSize: '12px', color: '#6b6b7d' }}
+            style={{ fontSize: '12px', color: '#6a7282' }}
             focusTrigger={trigger('time')}
           />
         </div>
@@ -134,7 +134,7 @@ export default function EventOverrideCard({
             onReset={() => onFieldReset('age_range')}
             placeholder="e.g. 0-5"
             variant="single"
-            style={{ fontSize: '12px', color: '#6b6b7d' }}
+            style={{ fontSize: '12px', color: '#6a7282' }}
             focusTrigger={trigger('age_range')}
           />
         </div>
@@ -147,7 +147,7 @@ export default function EventOverrideCard({
             onReset={() => onFieldReset('price')}
             placeholder={source.is_free ? 'FREE' : 'e.g. £5'}
             variant="single"
-            style={{ fontSize: '12px', color: '#6b6b7d' }}
+            style={{ fontSize: '12px', color: '#6a7282' }}
             focusTrigger={trigger('price')}
           />
         </div>
@@ -160,7 +160,7 @@ export default function EventOverrideCard({
             onReset={() => onFieldReset('location')}
             placeholder="e.g. SE10 9NF"
             variant="single"
-            style={{ fontSize: '12px', color: '#6b6b7d' }}
+            style={{ fontSize: '12px', color: '#6a7282' }}
             focusTrigger={trigger('location')}
           />
         </div>
@@ -191,7 +191,7 @@ export default function EventOverrideCard({
           onReset={() => onFieldReset('url')}
           placeholder="https://…"
           variant="single"
-          style={{ fontSize: '12px', color: '#0092ff' }}
+          style={{ fontSize: '12px', color: '#d1067f' }}
           focusTrigger={trigger('url')}
         />
       </div>

@@ -117,6 +117,70 @@ export default function AdvertiserOverrideCard({
         />
       </div>
 
+      {/* When / Price / Where — the presenting card's label table (migration 033).
+          Not shown for a supporter tile, which is a logo and nothing else, nor for
+          a brand sponsor, which has no session to describe. */}
+      {variant === 'presenting' && !isBrandSponsor && (
+        <>
+          <div>
+            <Label>When</Label>
+            <EditableText
+              value={ov.event_when}
+              defaultValue={source.event_when}
+              onChange={(v) => onFieldChange('event_when', v)}
+              onReset={() => onFieldReset('event_when')}
+              placeholder="Wed 10:30–11:10am (1–4 yrs)"
+              variant="multi"
+              style={{ fontSize: '13px', lineHeight: '1.5' }}
+              focusTrigger={trigger('event_when')}
+            />
+          </div>
+          <div>
+            <Label>Price</Label>
+            <EditableText
+              value={ov.event_price}
+              defaultValue={source.event_price}
+              onChange={(v) => onFieldChange('event_price', v)}
+              onReset={() => onFieldReset('event_price')}
+              placeholder="£15 trial class"
+              variant="single"
+              style={{ fontSize: '13px' }}
+              focusTrigger={trigger('event_price')}
+            />
+          </div>
+          <div>
+            <Label>Where</Label>
+            <EditableText
+              value={ov.event_where}
+              defaultValue={source.event_where}
+              onChange={(v) => onFieldChange('event_where', v)}
+              onReset={() => onFieldReset('event_where')}
+              placeholder="Unit 24, 53 Norman Rd, SE10 9QF"
+              variant="single"
+              style={{ fontSize: '13px' }}
+              focusTrigger={trigger('event_where')}
+            />
+          </div>
+        </>
+      )}
+
+      {/* Button wording — the advertiser's own call to action */}
+      {variant === 'presenting' && (
+        <div>
+          <Label>Button wording</Label>
+          <EditableText
+            value={ov.cta_label}
+            defaultValue={source.cta_label}
+            onChange={(v) => onFieldChange('cta_label', v)}
+            onReset={() => onFieldReset('cta_label')}
+            placeholder={isBrandSponsor ? 'Visit the website' : 'Find out more'}
+            variant="single"
+            style={{ fontSize: '13px' }}
+            focusTrigger={trigger('cta_label')}
+          />
+        </div>
+      )}
+
       {/* URL */}
       <div>
         <Label>{isBrandSponsor ? 'Website URL' : 'Event URL'}</Label>
@@ -127,7 +191,7 @@ export default function AdvertiserOverrideCard({
           onReset={() => onFieldReset('event_url')}
           placeholder="https://…"
           variant="single"
-          style={{ fontSize: '12px', color: '#0092ff' }}
+          style={{ fontSize: '12px', color: '#d1067f' }}
           focusTrigger={trigger('event_url')}
         />
       </div>
@@ -143,7 +207,7 @@ export default function AdvertiserOverrideCard({
             onReset={() => onFieldReset('contact_email')}
             placeholder="email@example.com"
             variant="single"
-            style={{ fontSize: '12px', color: '#6b6b7d' }}
+            style={{ fontSize: '12px', color: '#6a7282' }}
             focusTrigger={trigger('contact_email')}
           />
         </div>
