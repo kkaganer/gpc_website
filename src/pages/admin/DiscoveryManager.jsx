@@ -10,6 +10,9 @@ import {
   Sparkles,
   ChevronRight,
   ChevronDown,
+  Pencil,
+  Search,
+  Wand2,
 } from 'lucide-react'
 import {
   useDiscoveredActivities,
@@ -18,7 +21,15 @@ import {
   runIngest,
   pollBatch,
   backfillCoordinates,
+  updateActivity,
+  applyBulkFill,
 } from '../../hooks/useDiscoveredActivities'
+import ActivityEditPanel from '../../components/admin/ActivityEditPanel'
+import BulkFillPanel from '../../components/admin/BulkFillPanel'
+import {
+  GAPS, GAP_KEYS, filterActivities, gapCounts, planBulkFill, BULK_FILL_LABELS,
+} from '../../lib/discoveryFilters'
+import { geocodePostcode } from '../../lib/geocode'
 
 // flex + w-fit, not inline-flex: the pill sits on its own line under the age
 // text rather than trailing off the end of it.
@@ -157,7 +168,7 @@ function when(a) {
  * member of a group is still an ordinary row that can be judged on its own.
  * `nested` only indents it so the eye can see which group it belongs to.
  */
-function ActivityRow({ a, checked, onToggle, tab, onPublish, onReject, nested = false }) {
+function ActivityRow({ a, checked, onToggle, tab, onPublish, onReject, onEdit, nested = false }) {
   return (
     <tr
       className={`border-b border-gray-50 transition-colors ${
@@ -227,6 +238,16 @@ function ActivityRow({ a, checked, onToggle, tab, onPublish, onReject, nested = 
       </td>
       <td className="px-6 py-4 text-right">
         <div className="flex items-center justify-end gap-2">
+          {/* Correcting a listing BEFORE approving it is the cheap moment: the
+              fix goes into `activities`, and publish_activity carries it into
+              london_events. Approving first means fixing it twice. */}
+          <button
+            onClick={() => onEdit(a)}
+            className="p-2 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
+            title="Edit this listing"
+          >
+            <Pencil size={16} />
+          </button>
           {tab === 'pending' && (
             <button
               onClick={() => onPublish(a.id)}
@@ -436,16 +457,27 @@ export default function DiscoveryManager() {
   const [selected, setSelected] = useState(() => new Set())
   const [expanded, setExpanded] = useState(() => new Set())
   const [onlyLlmJudged, setOnlyLlmJudged] = useState(false)
+  const [search, setSearch] = useState('')
+  const [gaps, setGaps] = useState(() => new Set())
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  // The row the slide-over is pointed at, or null. Held as an id + the row so
+  // a refetch underneath the open panel re-seeds it with fresh values rather
+  // than leaving a stale copy on screen.
+  const [editingId, setEditingId] = useState(null)
+  const [bulkFilling, setBulkFilling] = useState(false)
 
   // The rows whose age nobody stated and nobody checked — the ones worth working
   // through as a batch. Counted on the current tab so the button can say how much
   // is waiting, and so it can stay quiet when there is nothing to look at.
   const llmJudgedCount = activities.filter((a) => a.age_basis === 'llm_judged').length
-  const visible = onlyLlmJudged
-    ? activities.filter((a) => a.age_basis === 'llm_judged')
-    : activities
+  // Counted on the whole tab, not on `visible`: a chip whose count fell to zero
+  // the moment you ticked it could not tell you what it was hiding, and the one
+  // that is on would be the only one you could never read a number for.
+  const counts = gapCounts(activities)
+  // Search AND chips AND the AI-ages filter; the chips OR among themselves.
+  const visible = filterActivities(activities, { search, gaps, onlyLlmJudged })
+  const narrowed = visible.length !== activities.length
 
   // Group AFTER filtering: with the AI-ages filter on, a group has to mean
   // "the repeats you are looking at", not "the repeats that exist".
@@ -461,20 +493,44 @@ export default function DiscoveryManager() {
       .flatMap((g) => g.rows.map((r) => r.id)),
   )
   const selectableRows = visible.filter((a) => !blockedIds.has(a.id))
+  // Looked up in the full list, not `visible`: a filter that hides the row
+  // mid-edit must not blank the panel you are typing into.
+  const editing = editingId ? activities.find((a) => a.id === editingId) ?? null : null
   const allSelected = selectableRows.length > 0 && selectableRows.every((a) => selected.has(a.id))
+
+  // WHAT A BULK BUTTON ACTUALLY ACTS ON.
+  //
+  // Selection survives a change of search or chips — otherwise every keystroke
+  // would wipe it and "search, then select all" would be impossible, which is
+  // the whole point of having a search box. The safety property that clearing
+  // used to provide (never action a row you cannot see) is kept by intersecting
+  // here instead, and the toolbar says out loud when the two numbers differ.
+  const actionableIds = selectableRows.filter((a) => selected.has(a.id)).map((a) => a.id)
+  const hiddenSelected = selected.size - actionableIds.length
+  const actionableRows = selectableRows.filter((a) => selected.has(a.id))
   const foldedCount = visible.length - groups.length
 
   useEffect(() => {
     document.title = 'Discovered Activities | GPC Admin'
   }, [])
 
-  // Clear on filter as well as tab: a tick on a row that is no longer on screen
-  // would still be approved or rejected by the bulk buttons. Open groups reset
-  // too — the keys belong to the set of rows that just went away.
+  // Changing TAB is the one thing that still clears: the rows are a different
+  // set entirely, so both the ticks and the open-group keys belong to a list
+  // that no longer exists. Search and chips deliberately do NOT clear — they
+  // narrow the same list, and `actionableIds` above already stops a hidden row
+  // being actioned.
   useEffect(() => {
     setSelected(new Set())
     setExpanded(new Set())
-  }, [tab, onlyLlmJudged])
+  }, [tab])
+
+  function toggleGap(key) {
+    setGaps((prev) => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
 
   function toggle(id) {
     setSelected((prev) => {
@@ -542,9 +598,15 @@ export default function DiscoveryManager() {
     refetch()
   }
 
+  // The intersection, never the raw `selected` — a row hidden by the current
+  // search must not be approved by a button that cannot show it to you.
   async function handleBulk(action) {
-    const ids = [...selected]
-    setSelected(new Set())
+    const ids = actionableIds
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const id of ids) next.delete(id)
+      return next
+    })
     await runOn(ids, action)
   }
 
@@ -582,6 +644,64 @@ export default function DiscoveryManager() {
     await rejectActivity(id)
     deselect(id)
     refetch()
+  }
+
+  async function handleEditSave(patch) {
+    const row = activities.find((a) => a.id === editingId)
+    await updateActivity(editingId, patch, { status: row?.status })
+    setEditingId(null)
+    setMessage(
+      row?.status === 'published'
+        ? `Saved “${patch.title}” and republished it to What’s On.`
+        : `Saved “${patch.title}”.`,
+    )
+    // Silent: the panel closing already unmounted; a full-page spinner here
+    // would throw away the scroll position the panel existed to protect.
+    refetch({ silent: true })
+  }
+
+  /**
+   * Fill blanks across the selected rows.
+   *
+   * The postcode is geocoded ONCE here, not once per row — every row is getting
+   * the same postcode, so a lookup each would be dozens of identical requests to
+   * postcodes.io for one answer. planBulkFill then applies the pair only to rows
+   * missing both coordinates.
+   */
+  async function handleBulkFill(values) {
+    setBusy(true)
+    setMessage('')
+    try {
+      let coords = null
+      if (values.postcode?.trim()) coords = await geocodePostcode(values.postcode)
+
+      const plan = planBulkFill(actionableRows, values, { coords })
+      const statusById = Object.fromEntries(actionableRows.map((a) => [a.id, a.status]))
+      const { failures } = await applyBulkFill(plan.writes, { statusById })
+
+      // Both numbers, per field. A bare success count would hide the skips, and
+      // the skips are what tell you whether the fill did what you meant.
+      const parts = plan.supplied.map((f) => {
+        const label = BULK_FILL_LABELS[f] ?? f
+        return plan.skipped[f]
+          ? `${label} set on ${plan.filled[f]}, ${plan.skipped[f]} already had one and were not changed`
+          : `${label} set on ${plan.filled[f]}`
+      })
+      // A postcode that would not geocode is worth saying out loud: the fill
+      // still worked, but those listings will not appear on the map.
+      const pinNote = values.postcode?.trim() && !coords
+        ? ' Could not find coordinates for that postcode, so no map pins were set.'
+        : ''
+      setMessage(
+        (parts.join('. ') || 'Nothing to fill') + '.' + pinNote +
+        (failures.length ? ` ${failures.length} failed: ${failures[0]}` : ''),
+      )
+      if (!failures.length) setBulkFilling(false)
+    } catch (err) {
+      setMessage(`Bulk fill failed: ${err.message}`)
+    }
+    setBusy(false)
+    refetch({ silent: true })
   }
 
   async function handleGeocode() {
@@ -688,6 +808,18 @@ export default function DiscoveryManager() {
         </div>
       )}
 
+      <div className="relative mb-4 max-w-md">
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search title, venue, postcode, borough, source..."
+          aria-label="Search discovered activities"
+          className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+        />
+      </div>
+
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
           {['pending', 'published', 'rejected'].map((t) => (
@@ -726,31 +858,87 @@ export default function DiscoveryManager() {
               : `AI-guessed ages (${llmJudgedCount})`}
           </button>
         )}
+
+        {/* The gap chips. Each names a listing that would publish broken, so
+            these are a worklist rather than a view. They OR with each other:
+            ticking a second one has to ADD its rows, because "show me
+            everything with a hole in it" is the question being asked. */}
+        {GAP_KEYS.map((key) => {
+          const on = gaps.has(key)
+          if (!counts[key] && !on) return null
+          return (
+            <button
+              key={key}
+              onClick={() => toggleGap(key)}
+              aria-pressed={on}
+              title={GAPS[key].title}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full border-2 text-xs font-bold transition-colors ${
+                on
+                  ? 'bg-red-100 border-red-300 text-red-900'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <AlertTriangle size={13} />
+              {GAPS[key].label} ({counts[key]})
+            </button>
+          )
+        })}
+
+        {gaps.size > 1 && (
+          <span className="text-xs text-gray-400">
+            showing listings missing <strong>any</strong> of these
+          </span>
+        )}
+
+        {(search.trim() || gaps.size > 0) && (
+          <button
+            onClick={() => { setSearch(''); setGaps(new Set()) }}
+            className="text-xs font-bold text-gray-500 hover:text-dark underline underline-offset-2"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {selected.size > 0 && (
         <div className="flex items-center gap-3 bg-white rounded-xl shadow-sm px-4 py-3 mb-4">
           {/* Listings, not entries: ticking one folded group arms every row in it,
-              so the number here has to be the number of things about to change. */}
+              so the number here has to be the number of things about to change.
+              It counts the ACTIONABLE rows, because that is what the buttons
+              beside it will act on — and it says so when the filter is hiding
+              some of what you ticked, rather than quietly acting on fewer. */}
           <span className="text-sm font-semibold text-gray-600">
-            {selected.size} listing{selected.size === 1 ? '' : 's'} selected
+            {actionableIds.length} listing{actionableIds.length === 1 ? '' : 's'} selected
+            {hiddenSelected > 0 && (
+              <span className="font-normal text-gray-400">
+                {' '}· {hiddenSelected} more hidden by the current filter
+              </span>
+            )}
           </span>
           <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={() => setBulkFilling(true)}
+              disabled={busy || actionableIds.length === 0}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-primary text-primary text-sm font-bold hover:bg-primary/5 transition-colors disabled:opacity-50"
+              title="Give the selected listings a postcode, venue, website, category or age — only where they have none."
+            >
+              <Wand2 size={16} /> Fill blanks
+            </button>
             {tab === 'pending' && (
               <button
                 onClick={() => handleBulk('approve')}
-                disabled={busy}
+                disabled={busy || actionableIds.length === 0}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500 text-white text-sm font-bold hover:bg-green-600 transition-colors disabled:opacity-50"
               >
-                <Check size={16} /> Approve &amp; publish {selected.size}
+                <Check size={16} /> Approve &amp; publish {actionableIds.length}
               </button>
             )}
             <button
               onClick={() => handleBulk('reject')}
-              disabled={busy}
+              disabled={busy || actionableIds.length === 0}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500 text-white text-sm font-bold hover:bg-red-600 transition-colors disabled:opacity-50"
             >
-              <X size={16} /> Reject {selected.size}
+              <X size={16} /> Reject {actionableIds.length}
             </button>
             <button
               onClick={() => setSelected(new Set())}
@@ -772,9 +960,24 @@ export default function DiscoveryManager() {
 
       {!loading && !error && visible.length === 0 && (
         <p className="text-gray-500 text-sm py-12 text-center">
-          {onlyLlmJudged
-            ? `No AI-guessed ages ${tab === 'pending' ? 'waiting' : tab} — nothing left to double-check here.`
-            : `Nothing ${tab}. Run discovery to pull from the open feeds.`}
+          {/* Name the filter that emptied the screen. "Nothing pending" under an
+              active search reads as a lost queue rather than a narrow one. */}
+          {search.trim() || gaps.size > 0 ? (
+            <>
+              No {tab} listings match{search.trim() ? ` “${search.trim()}”` : ' those filters'}.{' '}
+              <button
+                onClick={() => { setSearch(''); setGaps(new Set()) }}
+                className="font-bold text-primary hover:underline"
+              >
+                Clear filters
+              </button>{' '}
+              to see all {activities.length}.
+            </>
+          ) : onlyLlmJudged ? (
+            `No AI-guessed ages ${tab === 'pending' ? 'waiting' : tab} — nothing left to double-check here.`
+          ) : (
+            `Nothing ${tab}. Run discovery to pull from the open feeds.`
+          )}
         </p>
       )}
 
@@ -804,12 +1007,20 @@ export default function DiscoveryManager() {
                         )
                       }
                       className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
-                      aria-label="Select all"
+                      aria-label={
+                        allSelected
+                          ? `Deselect all ${selectableRows.length} listings shown`
+                          : `Select all ${selectableRows.length} listings shown`
+                      }
                       title={
-                        blockedIds.size
-                          ? `Selects every listing except the ${blockedIds.size} inside groups with ` +
-                            'no postcode — open those and check them first.'
-                          : 'Select all'
+                        // Says how many, and says "shown" — under a search or a
+                        // gap chip this ticks the narrowed set, not the queue.
+                        (narrowed
+                          ? `Selects the ${selectableRows.length} listing${selectableRows.length === 1 ? '' : 's'} the current filter leaves on screen`
+                          : `Selects all ${selectableRows.length} listing${selectableRows.length === 1 ? '' : 's'}`) +
+                        (blockedIds.size
+                          ? `, except the ${blockedIds.size} inside groups with no postcode — open those and check them first.`
+                          : '.')
                       }
                     />
                   </th>
@@ -832,6 +1043,7 @@ export default function DiscoveryManager() {
                       tab={tab}
                       onPublish={publishOne}
                       onReject={rejectOne}
+                      onEdit={(a) => setEditingId(a.id)}
                     />
                   ) : (
                     <Fragment key={group.key}>
@@ -855,6 +1067,7 @@ export default function DiscoveryManager() {
                             tab={tab}
                             onPublish={publishOne}
                             onReject={rejectOne}
+                            onEdit={(row) => setEditingId(row.id)}
                             nested
                           />
                         ))}
@@ -865,6 +1078,24 @@ export default function DiscoveryManager() {
             </table>
           </div>
         </>
+      )}
+
+      {bulkFilling && actionableRows.length > 0 && (
+        <BulkFillPanel
+          rows={actionableRows}
+          busy={busy}
+          onClose={() => setBulkFilling(false)}
+          onApply={handleBulkFill}
+        />
+      )}
+
+      {editing && (
+        <ActivityEditPanel
+          key={editing.id}
+          activity={editing}
+          onClose={() => setEditingId(null)}
+          onSaved={handleEditSave}
+        />
       )}
     </div>
   )

@@ -133,3 +133,51 @@ export async function pollBatch(batchId, onProgress, { intervalMs = 3000, timeou
   }
   return { status: 'timeout', id: batchId }
 }
+
+/**
+ * Save corrections to one activity.
+ *
+ * Writes to `activities`, the TABLE — never to `activity_review_queue`, which is
+ * a view with generated, derived and joined columns in it. RLS policy
+ * "Authenticated can manage activities" (008) already allows this, so no RPC is
+ * needed. `patch` must come from `buildActivityPatch`, which is the allow-list.
+ *
+ * A row that is ALREADY published is re-published afterwards. `publish_activity`
+ * upserts on (activity_id, date) (011), so re-running it pushes the correction
+ * out to `london_events`. Without this, editing anything on the Published tab
+ * changes the review screen and nothing the public can see — the feature would
+ * look like it silently failed.
+ */
+export async function updateActivity(id, patch, { status } = {}) {
+  const { error } = await supabase.from('activities').update(patch).eq('id', id)
+  if (error) throw error
+  if (status === 'published') await publishActivity(id)
+}
+
+/**
+ * Apply a bulk-fill plan.
+ *
+ * `writes` comes from `planBulkFill`, which has ALREADY decided what may be
+ * touched — this only sends it. Row by row rather than one statement, because
+ * each row gets a different patch (a row missing only a postcode must not have
+ * a website written to it as well), and because a single failure has to be
+ * reportable against the listing it belongs to rather than sinking the batch.
+ *
+ * Rows already published are republished, same reason as updateActivity: the
+ * correction has to reach `london_events` or it changes nothing anyone can see.
+ */
+export async function applyBulkFill(writes, { statusById } = {}) {
+  let ok = 0
+  const failures = []
+  for (const { id, patch } of writes) {
+    try {
+      const { error } = await supabase.from('activities').update(patch).eq('id', id)
+      if (error) throw error
+      if (statusById?.[id] === 'published') await publishActivity(id)
+      ok++
+    } catch (err) {
+      failures.push(err.message)
+    }
+  }
+  return { ok, failures }
+}

@@ -32,10 +32,17 @@ may not know about migrations applied by hand in the dashboard, and
 Migrations are numbered sequentially (`028_`, `029_`), not timestamped. Write
 every one idempotently so a retry is harmless.
 
-Applied by hand and known live: `007_add_postcode`. Checked 2026-09-07: remote
-migration history is in sync through `029`, 007 included, so no `migration repair`
+Applied by hand and known live: `007_add_postcode`. Checked 2026-09-08: remote
+migration history is in sync through `032`, 007 included, so no `migration repair`
 is needed. `db push` only replays what remote history lacks, which is why the bare
 `CREATE TABLE` in `001` has not bitten.
+
+`activity_review_queue` (the Discovery screen's source) is a VIEW with an EXPLICIT
+column list, recreated by 009, 024, 025 and 032. A column the UI needs but the view
+omits fails SILENTLY — the hook calls `.select('*')`, which expands to the view's
+columns, not the table's, so the field is `undefined` on every row with no error.
+Adding a field to that screen means recreating the view, and re-issuing
+`grant select ... to authenticated`, which a recreated view does not inherit.
 
 ## Things that bite
 
