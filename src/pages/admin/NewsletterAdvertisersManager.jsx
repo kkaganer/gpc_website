@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router'
-import { Plus, Pencil, Trash2, Mail, Sparkles } from 'lucide-react'
+import { Plus, Pencil, Trash2, Mail, Sparkles, CalendarPlus } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import { unlistedFreeListings } from '../../lib/freeListings'
 
 const statusColors = {
   pending: 'bg-amber-50 text-amber-600',
@@ -28,6 +29,7 @@ export default function NewsletterAdvertisersManager() {
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState('')
   const [parseResult, setParseResult] = useState(null)
+  const [unlisted, setUnlisted] = useState(() => new Set())
 
   useEffect(() => {
     document.title = 'Newsletter Advertisers | GPC Admin'
@@ -36,11 +38,21 @@ export default function NewsletterAdvertisersManager() {
 
   async function fetchAdvertisers() {
     setLoading(true)
-    const { data } = await supabase
-      .from('newsletter_advertisers')
-      .select('*')
-      .order('newsletter_date', { ascending: true })
-    setAdvertisers(data || [])
+    // Titles of everything already in the guide, so a sold free listing that
+    // nobody has actually listed can be spotted. A free-listing row renders
+    // nowhere by itself -- the listing is a london_events row somebody adds.
+    const [adsResult, eventsResult] = await Promise.all([
+      supabase
+        .from('newsletter_advertisers')
+        .select('*')
+        .order('newsletter_date', { ascending: true }),
+      supabase.from('london_events').select('title').eq('approved', true),
+    ])
+    const rows = adsResult.data || []
+    setAdvertisers(rows)
+    // A failed events query must not paint every row as unlisted -- that would
+    // be a screenful of false alarms on a transient error.
+    setUnlisted(eventsResult.error ? new Set() : unlistedFreeListings(rows, eventsResult.data || []))
     setLoading(false)
   }
 
@@ -81,6 +93,9 @@ export default function NewsletterAdvertisersManager() {
   }
 
   // Get unique newsletter dates for the filter dropdown
+  // Counted across everything, not just the current filter: the point is to notice
+  // one you are not currently looking at.
+  const unlistedCount = unlisted.size
   const uniqueDates = [...new Set(advertisers.map((a) => a.newsletter_date))].sort()
 
   const filtered = advertisers.filter((a) => {
@@ -152,6 +167,21 @@ export default function NewsletterAdvertisersManager() {
         </div>
       )}
 
+      {!loading && unlistedCount > 0 && (
+        <div className="mb-4 flex gap-3 items-start rounded-2xl bg-amber-50 border border-amber-200 p-4 text-sm leading-relaxed text-amber-900">
+          <CalendarPlus size={18} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <strong>
+              {unlistedCount} free {unlistedCount === 1 ? 'listing looks' : 'listings look'} like
+              nobody has added the event yet.
+            </strong>{' '}
+            A free listing is a record of the ask; the thing people actually see is an event under{' '}
+            <Link to="/admin/whats-on" className="font-semibold underline">What&rsquo;s On</Link>.
+            Until it is added, the listing appears nowhere. Marked below.
+          </div>
+        </div>
+      )}
+
       {!loading && (
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <table className="w-full text-sm">
@@ -174,7 +204,19 @@ export default function NewsletterAdvertisersManager() {
                       <p className="text-gray-400 text-xs">{ad.contact_email}</p>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-gray-600">{ad.event_title}</td>
+                  <td className="px-6 py-4 text-gray-600">
+                    {ad.event_title}
+                    {unlisted.has(ad.id) && (
+                      <Link
+                        to="/admin/whats-on/new"
+                        title="Matched on title only — a hint, not a lookup. Check before adding."
+                        className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 hover:bg-amber-100"
+                      >
+                        <CalendarPlus size={12} />
+                        Not in What&rsquo;s On yet — add it
+                      </Link>
+                    )}
+                  </td>
                   <td className="px-6 py-4 text-gray-600">{formatDate(ad.newsletter_date)}</td>
                   <td className="px-6 py-4">
                     <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">

@@ -46,11 +46,11 @@ const TIERS = [
     tier: 'Tier 3',
     name: 'Community listing',
     blurb:
-      'Free, and always will be. Your event appears as an ordinary line in the list, exactly like every other.',
+      'Free, and always will be. Send us the details and we add your event to the guide, where it appears as an ordinary line exactly like every other.',
     spec: {
-      Placement: 'Web list only, in date order',
+      Placement: 'The web guide, in date order. It can also be chosen as one of the five picks in the email, but that is our editorial call and never a guarantee',
       Frequency: 'Unlimited, subject to space',
-      'You supply': 'Title, date, venue, price',
+      'You supply': 'Title, date, venue, price — by email; we add the listing',
       'Click target': 'Row links to the venue, shared with all listings',
       Reporting: 'None',
     },
