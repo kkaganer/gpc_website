@@ -7,3 +7,6 @@ dist
 .wrangler
 mobile-screenshots*/
 .vercel
+
+# Supabase CLI scratch — a version cache, not project state.
+supabase/.temp/
