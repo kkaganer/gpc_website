@@ -71,8 +71,18 @@ export function scrubForWeb(html) {
   if (typeof html !== 'string') return ''
   return (
     html
-      // The <div> holding "No longer live in Greenwich? Unsubscribe", whole.
-      .replace(/<div>(?:(?!<\/div>)[\s\S])*?\{\{[\s\S]*?<\/div>\s*/gi, '')
+      // Any <div> holding a merge tag, whole — the unsubscribe row and the ESP
+      // attribution link. Removing the tag alone would leave an <a href=""> with
+      // its label intact: a dead link that still looks clickable.
+      //
+      // `<div\b[^>]*>` rather than `<div>`, because the attribution div carries a
+      // style attribute and the bare form matched only the unsubscribe row.
+      // Tempered on both sides of the tag so a match can never run past its own
+      // closing tag and swallow the rest of the footer.
+      .replace(
+        /<div\b[^>]*>(?:(?!<\/div>)[\s\S])*?\{\{(?:(?!<\/div>)[\s\S])*?<\/div>\s*/gi,
+        ''
+      )
       // Any merge tag that survived the line above, so none is ever rendered as
       // literal braces to a reader.
       .replace(/\{\{[^}]*\}\}/g, '')

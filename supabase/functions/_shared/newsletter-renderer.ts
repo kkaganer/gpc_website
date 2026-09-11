@@ -213,6 +213,12 @@ export type FooterBlock = {
    * without an unsubscribe tag. Set to '' to render no address line at all.
    */
   senderInfoTag?: string
+  /**
+   * The ESP attribution link, required on EmailOctopus's free Starter plan.
+   * Set both to '' to drop the line — which is what upgrading to Pro allows.
+   */
+  espCreditUrl?: string
+  espCreditLabel?: string
 }
 
 export type TextBlock = {
@@ -1328,6 +1334,14 @@ export function createRenderers(
     // merge tag, which is right: there is no ESP to substitute it there, and the
     // CIC line above already names us.
     const senderInfo = block.senderInfoTag ?? '{{SenderInfoLine}}'
+    // The third tag EmailOctopus blocks a send without, and the only one that is
+    // a condition of the price rather than of the law: the free Starter plan
+    // requires a link back to them. {{RewardsURL}} is the referral flavour of it,
+    // so the required link is also the one that credits GPC for a signup.
+    //
+    // Both blank drops the line, which is what a Pro upgrade buys.
+    const espCreditUrl = block.espCreditUrl ?? '{{RewardsURL}}'
+    const espCreditLabel = escapeHtml(block.espCreditLabel ?? 'Sent with EmailOctopus')
     return `
   <tr><td style="padding:18px 0 0 0;background-color:${C.page};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.footer}" style="background-color:${C.footer};border-collapse:collapse;">
@@ -1339,6 +1353,7 @@ export function createRenderers(
         <div style="padding-bottom:8px;"><a href="${B.websiteUrl}" target="_blank" style="color:rgba(255,255,255,.6);text-decoration:underline;">www.gpccommunity.co.uk</a></div>
         <div style="font-size:12px;line-height:18px;">While we try to ensure accuracy, we take no responsibility for the information above. Please check before travelling.</div>
         <div><span${editAttr(block.id, 'unsubscribeLabel')}>${unsubscribeLabel}</span> <a href="${unsubscribeUrl}" style="color:rgba(255,255,255,.6);text-decoration:underline;line-height:36px;">Unsubscribe</a></div>
+        ${espCreditUrl && espCreditLabel ? `<div style="font-size:12px;line-height:18px;"><a href="${espCreditUrl}" target="_blank" style="color:rgba(255,255,255,.45);text-decoration:underline;">${espCreditLabel}</a></div>` : ''}
       </td></tr>
     </table>
   </td></tr>`
