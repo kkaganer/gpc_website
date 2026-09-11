@@ -32,8 +32,8 @@ may not know about migrations applied by hand in the dashboard, and
 Migrations are numbered sequentially (`028_`, `029_`), not timestamped. Write
 every one idempotently so a retry is harmless.
 
-Applied by hand and known live: `007_add_postcode`. Checked 2026-09-08: remote
-migration history is in sync through `033`, 007 included, so no `migration repair`
+Applied by hand and known live: `007_add_postcode`. Checked 2026-09-11: remote
+migration history is in sync through `034`, 007 included, so no `migration repair`
 is needed. `db push` only replays what remote history lacks, which is why the bare
 `CREATE TABLE` in `001` has not bitten.
 
