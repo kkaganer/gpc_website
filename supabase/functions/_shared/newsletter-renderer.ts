@@ -207,6 +207,12 @@ export type FooterBlock = {
    * edition went nowhere. Defaults to EmailOctopus's tag -- see renderFooterBlock.
    */
   unsubscribeUrl?: string
+  /**
+   * The ESP's postal-address merge tag. EmailOctopus blocks a send whose HTML
+   * lacks `{{SenderInfoLine}}` or `{{SenderInfo}}`, the same way it blocks one
+   * without an unsubscribe tag. Set to '' to render no address line at all.
+   */
+  senderInfoTag?: string
 }
 
 export type TextBlock = {
@@ -1310,12 +1316,25 @@ export function createRenderers(
     // ship a dead unsubscribe link, which is why this stays configurable: a
     // wrong tag can be corrected from the draft config without a deploy.
     const unsubscribeUrl = escapeHtml(block.unsubscribeUrl || '{{UnsubscribeURL}}')
+    // The postal address, and the second tag EmailOctopus blocks a send without.
+    // CAN-SPAM and the UK equivalent both require a real address in a commercial
+    // email, and EmailOctopus will not take our word that the line above is one --
+    // it substitutes the address held on the account, so this is the only spelling
+    // of it that counts. {{SenderInfoLine}} is the one-line form; {{SenderInfo}}
+    // is the stacked one. Configurable for the same reason the unsubscribe tag is:
+    // the next ESP will spell it differently.
+    //
+    // Renders nothing on the web copy -- api/newsletter.js drops any div holding a
+    // merge tag, which is right: there is no ESP to substitute it there, and the
+    // CIC line above already names us.
+    const senderInfo = block.senderInfoTag ?? '{{SenderInfoLine}}'
     return `
   <tr><td style="padding:18px 0 0 0;background-color:${C.page};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.footer}" style="background-color:${C.footer};border-collapse:collapse;">
       <tr><td align="center" style="padding:28px 32px 30px 32px;font-family:${F.body};font-size:13px;line-height:22px;color:rgba(255,255,255,.6);text-align:center;">
         <div style="font-family:${F.heading};font-weight:700;font-size:15px;line-height:22px;color:#ffffff;padding-bottom:10px;">Greenwich Parents &amp; Carers</div>
         <div${editAttr(block.id, 'cicText')}>${cicText}</div>
+        ${senderInfo ? `<div>${senderInfo}</div>` : ''}
         <div><a href="${B.instagramUrl}" target="_blank" style="color:#ffffff;text-decoration:none;font-weight:700;line-height:44px;">${escapeHtml(B.instagramHandle)}</a></div>
         <div style="padding-bottom:8px;"><a href="${B.websiteUrl}" target="_blank" style="color:rgba(255,255,255,.6);text-decoration:underline;">www.gpccommunity.co.uk</a></div>
         <div style="font-size:12px;line-height:18px;">While we try to ensure accuracy, we take no responsibility for the information above. Please check before travelling.</div>

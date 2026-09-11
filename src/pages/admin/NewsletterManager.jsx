@@ -19,7 +19,30 @@ import {
   nearestFriday,
   todayIso,
   renderWhatsapp,
+  createRenderers,
 } from '../../../supabase/functions/_shared/newsletter-renderer'
+
+// The email HTML for a draft, rendered now rather than read from the column
+// written when the draft was generated.
+//
+// Same reasoning as whatsappFor below, and the same bite: content_html is a
+// snapshot, so a renderer fix -- an ESP's required merge tag, say -- reached
+// only editions generated after the deploy, and the draft already sitting in
+// the list went out without it. Everything needed is in content_json.
+//
+// Falls back to the stored column for a legacy draft with no v2 config.
+function htmlFor(draft) {
+  const config = draft?.content_json?.config
+  const resolved = draft?.content_json?.resolved_snapshot
+  if (config && resolved) {
+    try {
+      return createRenderers(config.theme).renderNewsletter(config, resolved)
+    } catch {
+      // A malformed config must not cost the button; the snapshot still works.
+    }
+  }
+  return draft?.content_html || ''
+}
 
 // The WhatsApp message for a draft, rendered now rather than read from the
 // column written when the draft was generated.
@@ -166,7 +189,7 @@ export default function NewsletterManager() {
 
   async function handleCopyHtml(draft) {
     try {
-      await navigator.clipboard.writeText(draft.content_html)
+      await navigator.clipboard.writeText(htmlFor(draft))
       setCopied(draft.id)
       setTimeout(() => setCopied(null), 2000)
     } catch {
