@@ -15,7 +15,35 @@ import ConfirmModal from '../../components/ui/ConfirmModal'
 // Was a third local copy of this, with the same local-parse / UTC-serialise slip
 // the shared one had. One implementation now, so the date the draft is generated
 // for and the date the email prints cannot drift apart.
-import { nearestFriday, todayIso } from '../../../supabase/functions/_shared/newsletter-renderer'
+import {
+  nearestFriday,
+  todayIso,
+  renderWhatsapp,
+} from '../../../supabase/functions/_shared/newsletter-renderer'
+
+// The WhatsApp message for a draft, rendered now rather than read from the
+// column written when the draft was generated.
+//
+// `whatsapp_text` is a snapshot, and a snapshot goes stale the moment the
+// renderer changes -- which is how a fix to where the link points would have
+// reached only editions generated after the deploy, and not the one sitting in
+// the list waiting to be sent. Everything renderWhatsapp needs is in
+// `content_json`, so there is no reason to trust the copy.
+//
+// Falls back to the stored column for a legacy draft with no v2 config, which is
+// the only case where the snapshot is all there is.
+function whatsappFor(draft) {
+  const config = draft?.content_json?.config
+  const resolved = draft?.content_json?.resolved_snapshot
+  if (config && resolved) {
+    try {
+      return renderWhatsapp(config, resolved)
+    } catch {
+      // A malformed config must not cost the button; the snapshot still works.
+    }
+  }
+  return draft?.whatsapp_text || ''
+}
 
 export default function NewsletterManager() {
   const [drafts, setDrafts] = useState([])
@@ -128,7 +156,7 @@ export default function NewsletterManager() {
 
   async function handleCopyWhatsapp(draft) {
     try {
-      await navigator.clipboard.writeText(draft.whatsapp_text)
+      await navigator.clipboard.writeText(whatsappFor(draft))
       setCopied(`wa-${draft.id}`)
       setTimeout(() => setCopied(null), 2000)
     } catch {
@@ -345,7 +373,7 @@ export default function NewsletterManager() {
                   {copied === draft.id ? <CheckCircle2 size={16} className="text-green-500" /> : <Copy size={16} />}
                   {copied === draft.id ? 'Copied!' : 'Copy HTML'}
                 </button>
-                {draft.whatsapp_text && (
+                {whatsappFor(draft) && (
                   <button
                     onClick={() => handleCopyWhatsapp(draft)}
                     className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-500 hover:text-primary rounded-lg hover:bg-primary/5 transition-colors"

@@ -198,6 +198,55 @@ function SupporterRail({ supporters, editionDate }) {
   )
 }
 
+// The week's welcome, straight from the draft the email is built from.
+//
+// Without it the page carried the same stock sentence every week and read as a
+// directory -- which made the intro written in the editor an email-only field
+// and the page something other than the edition it is meant to be. Centred and
+// slightly larger than body copy, the same treatment renderIntroBlock gives it
+// in the email, so the two arrive feeling like one thing.
+function Welcome({ intro }) {
+  if (!intro?.message) return null
+  return (
+    <SectionShell>
+      <div className="max-w-[620px] mx-auto bg-white border border-gray-100 border-l-[3px] border-l-primary rounded-2xl shadow-sm px-6 py-5 mb-8">
+        <p className="text-base sm:text-[17px] leading-relaxed text-gray-700 text-pretty">
+          {intro.message}
+        </p>
+        {intro.signature && (
+          <p className="font-bold text-base leading-relaxed text-dark mt-2">{intro.signature}</p>
+        )}
+      </div>
+    </SectionShell>
+  )
+}
+
+// Where a reader goes once they have read the week.
+//
+// The edition is a fixed seven-day window by design, so it is also a dead end:
+// everything past Thursday is on the browse tool and this page never said so.
+// Sits inside the list column, so no SectionShell of its own -- the grid has
+// already done the gutters.
+function BeyondThisWeek() {
+  return (
+    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 sm:p-8 text-center">
+      <div className="font-heading font-bold text-xl sm:text-2xl leading-snug text-dark">
+        Looking further ahead?
+      </div>
+      <p className="text-base leading-relaxed text-gray-600 mt-2 max-w-[460px] mx-auto">
+        This page is one week. The full listings go well beyond it, and you can search them by
+        date, area and age.
+      </p>
+      <Link
+        to="/whats-on"
+        className="inline-flex items-center justify-center min-h-[44px] mt-5 px-6 py-3 rounded-full bg-gradient-to-r from-primary to-dark text-white font-bold text-[15px] hover:scale-[1.02] transition-transform"
+      >
+        Browse everything that&rsquo;s on →
+      </Link>
+    </div>
+  )
+}
+
 function SubscribeCard() {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState('idle')
@@ -393,7 +442,7 @@ function EditionMessage({ title, children }) {
 
 export default function WhatsOnEdition() {
   const { date } = useParams()
-  const { events, regulars, presenting, supporters, loading, error } = useEdition(date)
+  const { events, regulars, presenting, supporters, intro, loading, error } = useEdition(date)
 
   if (loading) return <EditionSkeleton />
 
@@ -436,8 +485,19 @@ export default function WhatsOnEdition() {
             {totalCount} {totalCount === 1 ? 'event' : 'events'} this week and beyond, with
             times, prices and booking links. Free things are marked.
           </p>
+          {/* Quiet, because the real invitation to browse is at the foot of the
+              list. This one is for the reader who arrives already looking past
+              Thursday and should not have to scroll the week to find out they can. */}
+          <Link
+            to="/whats-on"
+            className="inline-flex items-center min-h-[44px] mt-1 font-bold text-sm text-[#d1067f] hover:underline"
+          >
+            Looking beyond this week? Browse all listings →
+          </Link>
         </div>
       </SectionShell>
+
+      <Welcome intro={intro} />
 
       <PresentingSlot advertiser={presenting} editionDate={date} />
 
@@ -486,6 +546,8 @@ export default function WhatsOnEdition() {
                 </div>
               </section>
             ))}
+
+            <BeyondThisWeek />
           </div>
 
           <aside className="flex flex-col gap-5 lg:sticky lg:top-6">

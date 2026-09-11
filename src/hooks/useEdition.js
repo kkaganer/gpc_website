@@ -11,11 +11,15 @@ import { editionRange } from '../lib/editionGroups'
 //
 // Advertisers come from `public_newsletter_advertisers` (migration 030), not the
 // base table -- the base table is authenticated-only and carries contact details.
+// The week's welcome comes from `public_newsletter_intros` (034) for the same
+// reason: `newsletter_drafts` holds the whole unsent edition, the page needs two
+// strings out of it.
 export function useEdition(date) {
   const [events, setEvents] = useState([])
   const [regulars, setRegulars] = useState([])
   const [presenting, setPresenting] = useState(null)
   const [supporters, setSupporters] = useState([])
+  const [intro, setIntro] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -60,10 +64,19 @@ export function useEdition(date) {
         .select('*')
         .eq('newsletter_date', range.from)
 
-      const [eventsResult, regularsResult, advertisersResult] = await Promise.all([
+      // maybeSingle, not single: most weeks have a draft and some do not, and a
+      // week without one is the ordinary case for an old edition, not an error.
+      const introQuery = supabase
+        .from('public_newsletter_intros')
+        .select('message, signature')
+        .eq('week_of', range.from)
+        .maybeSingle()
+
+      const [eventsResult, regularsResult, advertisersResult, introResult] = await Promise.all([
         eventsQuery,
         regularsQuery,
         advertisersQuery,
+        introQuery,
       ])
 
       if (cancelled) return
@@ -72,6 +85,7 @@ export function useEdition(date) {
         setError(eventsResult.error.message)
         setEvents([])
         setRegulars([])
+        setIntro(null)
         setLoading(false)
         return
       }
@@ -88,6 +102,13 @@ export function useEdition(date) {
       const advertisers = advertisersResult.error ? [] : advertisersResult.data || []
       setPresenting(advertisers.find((a) => a.ad_type === 'featured-ad') || null)
       setSupporters(advertisers.filter((a) => a.ad_type === 'logo-sponsor'))
+
+      // Not fatal either, and for the strongest reason of the three: the welcome
+      // is the one thing on this page that is decoration. A week whose draft has
+      // not been written yet must still show its listings.
+      const introRow = introResult.error ? null : introResult.data
+      setIntro(introRow?.message ? introRow : null)
+
       setLoading(false)
     }
 
@@ -102,5 +123,5 @@ export function useEdition(date) {
     }
   }, [date])
 
-  return { events, regulars, presenting, supporters, loading, error }
+  return { events, regulars, presenting, supporters, intro, loading, error }
 }

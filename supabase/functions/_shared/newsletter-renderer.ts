@@ -204,7 +204,7 @@ export type FooterBlock = {
   /**
    * The ESP's unsubscribe merge tag. Left configurable rather than guessed: the
    * old renderer shipped a literal href="#" here, so the link in every sent
-   * edition went nowhere.
+   * edition went nowhere. Defaults to EmailOctopus's tag -- see renderFooterBlock.
    */
   unsubscribeUrl?: string
 }
@@ -402,7 +402,33 @@ export const PRESENTING_IMAGE = { width: 552, height: 200 }
 /** WhatsApp shows a "Read more" fold past roughly this many characters. */
 export const WHATSAPP_MAX = 1000
 
-const SITE_URL = 'https://gpccommunity.co.uk'
+/**
+ * The edition page both deliveries point at.
+ *
+ * ONE implementation, called by the WhatsApp message and by the email's button,
+ * because they were built separately and drifted: WhatsApp hardcoded the apex
+ * domain while the button derived www from `BrandConfig.websiteUrl`, so the two
+ * "same" links were two origins, and an `editionCta` url set in the editor moved
+ * the button without moving the message. Both serve the page, so nothing was
+ * visibly broken -- which is why it survived. Change the destination here and it
+ * changes in both places, which is the only guarantee worth having.
+ */
+export function editionUrl(
+  weekOf: string | undefined,
+  opts: { siteUrl?: string; override?: string } = {},
+): string {
+  if (opts.override) return opts.override
+  const root = (opts.siteUrl || DEFAULT_BRAND.websiteUrl).replace(/\/$/, '')
+  return weekOf ? `${root}/whats-on/${weekOf}` : `${root}/whats-on`
+}
+
+/** The `editionCta` block's url override, if the config carries one. */
+function editionCtaOverride(config: NewsletterConfig): string | undefined {
+  const block = (config?.blocks || []).find(
+    (b): b is EditionCtaBlock => b?.type === 'editionCta' && b.enabled !== false,
+  )
+  return block?.url || undefined
+}
 
 /**
  * Strip anything WhatsApp cannot render.
@@ -437,9 +463,11 @@ export function renderWhatsapp(
   resolved: ResolvedData,
   opts: { siteUrl?: string; eventCount?: number } = {},
 ): string {
-  const site = opts.siteUrl || SITE_URL
-  const weekOf = config?.metadata?.weekOf || ''
-  const url = weekOf ? `${site}/whats-on/${weekOf}` : `${site}/whats-on`
+  // Same URL the email's button carries, override included -- see editionUrl.
+  const url = editionUrl(config?.metadata?.weekOf, {
+    siteUrl: opts.siteUrl,
+    override: editionCtaOverride(config),
+  })
 
   const events: EventData[] = []
   for (const list of Object.values(resolved?.autoEventsByBlockId || {})) {
@@ -933,8 +961,11 @@ export function createRenderers(
   ): string {
     if (!block.enabled) return ''
     const count = Number.isInteger(resolved?.editionEventCount) ? resolved.editionEventCount : 0
+    // Shared with renderWhatsapp so the button and the WhatsApp message cannot
+    // point at different places. Passes this render's brand root rather than the
+    // default, since a caller may have overridden websiteUrl.
     const href = escapeHtml(
-      block.url || siteUrl(metadata.weekOf ? `whats-on/${metadata.weekOf}` : 'whats-on')
+      editionUrl(metadata.weekOf, { siteUrl: siteRoot, override: block.url })
     )
     const template = block.label || 'See all {count} events →'
     // A week we could not count says "See the full guide" rather than "See all 0".
@@ -1253,11 +1284,18 @@ export function createRenderers(
     if (!block.enabled) return ''
     const cicText = escapeHtml(block.cicText || 'GPC CIC no. 16387545 · SE10 9JT London')
     const unsubscribeLabel = escapeHtml(block.unsubscribeLabel || 'No longer live in Greenwich?')
-    // Brevo's merge tag by default. The old renderer shipped a literal "#" here,
-    // so the unsubscribe link in every sent edition went nowhere -- which is a
-    // legal problem, not a cosmetic one. Configurable so it can be corrected
-    // without a deploy if the ESP tag differs.
-    const unsubscribeUrl = escapeHtml(block.unsubscribeUrl || '{{ unsubscribe }}')
+    // EmailOctopus's merge tag by default. The capitalisation is exact -- the tag
+    // is {{UnsubscribeURL}}, and EmailOctopus REFUSES to send a campaign whose
+    // HTML does not contain it, so a typo here is a blocked send rather than a
+    // silent one.
+    //
+    // Was Brevo's '{{ unsubscribe }}' until the subscriber list moved to
+    // EmailOctopus on 2026-09-11; before that the renderer shipped a literal
+    // "#", so the unsubscribe link in every sent edition went nowhere -- which
+    // is a legal problem, not a cosmetic one. Two ESP moves, two chances to
+    // ship a dead unsubscribe link, which is why this stays configurable: a
+    // wrong tag can be corrected from the draft config without a deploy.
+    const unsubscribeUrl = escapeHtml(block.unsubscribeUrl || '{{UnsubscribeURL}}')
     return `
   <tr><td style="padding:18px 0 0 0;background-color:${C.page};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${C.footer}" style="background-color:${C.footer};border-collapse:collapse;">
