@@ -403,31 +403,43 @@ export const PRESENTING_IMAGE = { width: 552, height: 200 }
 export const WHATSAPP_MAX = 1000
 
 /**
- * The edition page both deliveries point at.
+ * The week's listings page: /whats-on/{weekOf}.
  *
- * ONE implementation, called by the WhatsApp message and by the email's button,
- * because they were built separately and drifted: WhatsApp hardcoded the apex
- * domain while the button derived www from `BrandConfig.websiteUrl`, so the two
- * "same" links were two origins, and an `editionCta` url set in the editor moved
- * the button without moving the message. Both serve the page, so nothing was
- * visibly broken -- which is why it survived. Change the destination here and it
- * changes in both places, which is the only guarantee worth having.
+ * Where the email's button goes, and the SECOND step of the journey -- not the
+ * first. A reader who is already inside the edition wants the full list next.
  */
 export function editionUrl(
   weekOf: string | undefined,
   opts: { siteUrl?: string; override?: string } = {},
 ): string {
   if (opts.override) return opts.override
-  const root = (opts.siteUrl || DEFAULT_BRAND.websiteUrl).replace(/\/$/, '')
+  const root = siteRootOf(opts.siteUrl)
   return weekOf ? `${root}/whats-on/${weekOf}` : `${root}/whats-on`
 }
 
-/** The `editionCta` block's url override, if the config carries one. */
-function editionCtaOverride(config: NewsletterConfig): string | undefined {
-  const block = (config?.blocks || []).find(
-    (b): b is EditionCtaBlock => b?.type === 'editionCta' && b.enabled !== false,
-  )
-  return block?.url || undefined
+/**
+ * The edition itself, on the web: /newsletter/{weekOf}.
+ *
+ * Where the WhatsApp message goes, and deliberately NOT where the button goes.
+ * WhatsApp and email are both delivery, so a WhatsApp reader should open the
+ * same edition an email subscriber opens -- masthead, welcome, presenting
+ * partner, the five picks -- and reach the listings the same way they do, by
+ * the button inside it. Pointing WhatsApp straight at /whats-on/{weekOf}
+ * skipped the newsletter entirely and handed them the tool instead.
+ *
+ * So the chain is: this page, then editionUrl, then the whole of /whats-on.
+ * Served by api/newsletter.js from the draft's stored content_html.
+ */
+export function newsletterUrl(
+  weekOf: string | undefined,
+  opts: { siteUrl?: string } = {},
+): string {
+  const root = siteRootOf(opts.siteUrl)
+  return weekOf ? `${root}/newsletter/${weekOf}` : `${root}/whats-on`
+}
+
+function siteRootOf(siteUrl?: string): string {
+  return (siteUrl || DEFAULT_BRAND.websiteUrl).replace(/\/$/, '')
 }
 
 /**
@@ -463,11 +475,10 @@ export function renderWhatsapp(
   resolved: ResolvedData,
   opts: { siteUrl?: string; eventCount?: number } = {},
 ): string {
-  // Same URL the email's button carries, override included -- see editionUrl.
-  const url = editionUrl(config?.metadata?.weekOf, {
-    siteUrl: opts.siteUrl,
-    override: editionCtaOverride(config),
-  })
+  // The edition on the web, NOT the listings page -- see newsletterUrl. The
+  // message's job is to hand over the newsletter; the newsletter's own button
+  // does the handover to the listings.
+  const url = newsletterUrl(config?.metadata?.weekOf, { siteUrl: opts.siteUrl })
 
   const events: EventData[] = []
   for (const list of Object.values(resolved?.autoEventsByBlockId || {})) {
@@ -504,18 +515,21 @@ export function renderWhatsapp(
     ? ` \u2014 ${names.slice(0, -1).join(', ')}${names.length > 1 ? ' and ' : ''}${names[names.length - 1]}`
     : ''
 
+  // "Read it here", not "Full guide": the link opens the newsletter, and the
+  // full guide is one button further on. Promising the guide and delivering
+  // five picks is the kind of small lie a reader notices.
   const lines = [
     `*What's On this week*`,
     '',
     `${countPhrase}${highlights}.`,
     '',
-    `Full guide: ${url}`,
+    `Read it here: ${url}`,
   ]
 
   let out = lines.join('\n')
   if (out.length > WHATSAPP_MAX) {
     // Trim the highlight sentence, never the link -- the link is the point.
-    const tail = `.\n\nFull guide: ${url}`
+    const tail = `.\n\nRead it here: ${url}`
     const head = `*What's On this week*\n\n${countPhrase}`
     const room = WHATSAPP_MAX - head.length - tail.length
     const trimmed = room > 0 ? highlights.slice(0, room).replace(/[,\s\u2014]+$/, '') : ''

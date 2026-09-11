@@ -212,10 +212,14 @@ export default function Help() {
             using the same Friday date. Open it before you generate anything.
           </p>
           <p>
-            It comes first because both the email and the WhatsApp message point here, so wrong
-            here is wrong everywhere — and because it is built from the events and advertisers you
-            set up in steps 1 and 2, it shows you whether those landed before you take a snapshot
-            of them.
+            It comes first because everything else lands here eventually. The email&rsquo;s button
+            points at it, and so does the WhatsApp message — by way of the edition itself at{' '}
+            <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
+              gpccommunity.co.uk/newsletter/YYYY-MM-DD
+            </code>
+            , which is the emailed newsletter on the web. So wrong here is wrong everywhere — and
+            because it is built from the events and advertisers you set up in steps 1 and 2, it
+            shows you whether those landed before you take a snapshot of them.
           </p>
           <p>
             It is <em>not</em> a preview of the email. The email carries five picks; this page
