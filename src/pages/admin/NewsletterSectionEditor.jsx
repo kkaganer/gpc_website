@@ -918,6 +918,19 @@ function BlockFieldEditor({ block, resolvedData, focusRequest, onChange, onOverr
   )
 }
 
+// Wrap the current textarea selection in an email-safe tag (<strong>/<em>/<a>).
+// A deliberately small alternative to a full rich-text editor: the renderer only
+// supports these tags, and keeping the field plain HTML means no new dependency.
+function wrapHtmlSelection(block, onChange, tag) {
+  const ta = typeof document !== 'undefined' ? document.getElementById(`textblock-${block.id}`) : null
+  const text = block.htmlContent || ''
+  const start = ta ? ta.selectionStart : text.length
+  const end = ta ? ta.selectionEnd : text.length
+  const sel = text.slice(start, end) || (tag === 'a' ? 'link text' : tag === 'strong' ? 'bold text' : 'italic text')
+  const open = tag === 'a' ? '<a href="https://">' : `<${tag}>`
+  onChange({ htmlContent: text.slice(0, start) + open + sel + `</${tag}>` + text.slice(end) })
+}
+
 function BlockFields({ block, resolvedData, focusRequest, onChange, onOverrideChange, onOverrideReset }) {
   // Only apply focus to this block if the request is for this block
   const activeFocus =
@@ -1330,15 +1343,23 @@ function BlockFields({ block, resolvedData, focusRequest, onChange, onOverrideCh
         <div className="space-y-3">
           <label className="block">
             <span className="text-xs font-semibold text-gray-700">HTML content</span>
+            <div className="mt-1 flex gap-1">
+              <button type="button" onClick={() => wrapHtmlSelection(block, onChange, 'strong')} className="px-2 py-1 rounded border border-gray-200 text-xs font-bold hover:bg-gray-50" title="Bold">B</button>
+              <button type="button" onClick={() => wrapHtmlSelection(block, onChange, 'em')} className="px-2 py-1 rounded border border-gray-200 text-xs italic hover:bg-gray-50" title="Italic">I</button>
+              <button type="button" onClick={() => wrapHtmlSelection(block, onChange, 'a')} className="px-2 py-1 rounded border border-gray-200 text-xs underline hover:bg-gray-50" title="Link">Link</button>
+            </div>
             <textarea
+              id={`textblock-${block.id}`}
               value={block.htmlContent || ''}
               onChange={(e) => onChange({ htmlContent: e.target.value })}
               rows={6}
+              spellCheck
               className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
             />
             <p className="text-xs text-gray-500 mt-1">
-              You can use <code>&lt;strong&gt;</code>, <code>&lt;em&gt;</code>, and <code>&lt;a href&gt;</code> tags.
-              A full rich-text toolbar is coming in the next update.
+              Select text, then B / I / Link to wrap it — or type <code>&lt;strong&gt;</code>,
+              <code>&lt;em&gt;</code> and <code>&lt;a href&gt;</code> yourself. For a link, set the
+              address in the inserted <code>href</code>. Spell-check is your browser&rsquo;s.
             </p>
           </label>
           <label className="block">
