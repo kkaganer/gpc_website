@@ -68,6 +68,11 @@ export function activityFormFromRow(row) {
     const value = row?.[field]
     form[field] = value === null || value === undefined ? '' : String(value)
   }
+  // The panel shows age as ONE free-text box, like the other two event forms,
+  // instead of two "months" inputs. Months stay the system of record (the
+  // under-5 publish gating keys off them); age_range here is the derived text
+  // from the row, and on save we parse it back to months only if it was edited.
+  form.age_range = row?.age_range == null ? '' : String(row.age_range)
   return form
 }
 
@@ -113,4 +118,44 @@ export function validateActivityPatch(patch) {
   if (patch.lat != null && (patch.lat < -90 || patch.lat > 90)) errors.push('Latitude must be between -90 and 90.')
   if (patch.lng != null && (patch.lng < -180 || patch.lng > 180)) errors.push('Longitude must be between -180 and 180.')
   return errors
+}
+
+/**
+ * Parse a free-text age ("0-5", "0-18 months", "3+", "All ages") into
+ * { min, max } months. Months are the system of record on the Discovery side,
+ * so this lets the panel offer the same free-text age box as the other two
+ * forms without losing the structured months. Rough inverse of the SQL
+ * discovery_age_text(); unparseable text (e.g. "pre-walkers") becomes all ages.
+ */
+export function ageTextToMonths(text) {
+  const s = String(text ?? '').trim().toLowerCase()
+  if (s === '' || s === 'all ages' || s === 'all' || s === 'any' || s === 'all welcome') {
+    return { min: null, max: null }
+  }
+  const yToM = (y) => Math.round(parseFloat(y) * 12)
+  let m
+  if ((m = s.match(/^(\d+)\s*[-–]\s*(\d+)\s*months?$/))) return { min: +m[1], max: +m[2] }
+  if ((m = s.match(/^(\d+)\s*months?\s*[-–]\s*(\d+(?:\.\d+)?)\s*years?$/))) return { min: +m[1], max: yToM(m[2]) }
+  if ((m = s.match(/^(?:up to|under)\s*(\d+(?:\.\d+)?)/))) return { min: null, max: yToM(m[1]) }
+  if ((m = s.match(/^(\d+)\s*months?\s*\+$/)) || (m = s.match(/^(\d+)\s*\+\s*months?$/))) return { min: +m[1], max: null }
+  if ((m = s.match(/^(\d+(?:\.\d+)?)\s*years?\s*\+$/)) || (m = s.match(/^(\d+(?:\.\d+)?)\s*\+\s*(?:years?)?$/))) return { min: yToM(m[1]), max: null }
+  if ((m = s.match(/^(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*(?:years?)?$/))) return { min: yToM(m[1]), max: yToM(m[2]) }
+  if ((m = s.match(/^(\d+(?:\.\d+)?)\s*years?$/))) return { min: yToM(m[1]), max: yToM(m[1]) }
+  // Unparseable free text: no structured months, treat as all ages.
+  return { min: null, max: null }
+}
+
+/**
+ * Return `form` with age_min_months/age_max_months derived from the free-text
+ * age_range — but ONLY when the text was actually edited. An untouched activity
+ * keeps its exact months (and so its publish gating), round-trip safe.
+ */
+export function withAgeMonths(form, originalAgeText) {
+  if ((form.age_range ?? '') === (originalAgeText ?? '')) return form
+  const { min, max } = ageTextToMonths(form.age_range)
+  return {
+    ...form,
+    age_min_months: min == null ? '' : String(min),
+    age_max_months: max == null ? '' : String(max),
+  }
 }

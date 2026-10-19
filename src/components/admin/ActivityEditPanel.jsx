@@ -4,6 +4,7 @@ import {
   activityFormFromRow,
   buildActivityPatch,
   validateActivityPatch,
+  withAgeMonths,
 } from '../../lib/discoveryActivity'
 import { geocodePostcode } from '../../lib/geocode'
 
@@ -63,7 +64,7 @@ export default function ActivityEditPanel({ activity, onClose, onSaved }) {
     if (e && e.preventDefault) e.preventDefault()
     setError('')
 
-    const patch = buildActivityPatch(form)
+    const patch = buildActivityPatch(withAgeMonths(form, activity.age_range))
     const problems = validateActivityPatch(patch)
     if (problems.length) {
       setError(problems.join(' '))
@@ -267,22 +268,15 @@ export default function ActivityEditPanel({ activity, onClose, onSaved }) {
             </select>
           </Field>
 
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Youngest age" hint="In MONTHS.">
-              <input
-                type="number" min="0" value={form.age_min_months}
-                onChange={(e) => set('age_min_months', e.target.value)}
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Oldest age" hint="In months. 60 = 5 years.">
-              <input
-                type="number" min="0" value={form.age_max_months}
-                onChange={(e) => set('age_max_months', e.target.value)}
-                className={inputClass}
-              />
-            </Field>
-          </div>
+          <Field label="Age" hint={'Free text, like the other forms — e.g. "0-5", "0-18 months", "3+", "All ages".'}>
+            <input
+              type="text"
+              value={form.age_range}
+              onChange={(e) => set('age_range', e.target.value)}
+              className={inputClass}
+              placeholder="e.g. 0-5, All ages"
+            />
+          </Field>
 
           <Field label="Price">
             <input
