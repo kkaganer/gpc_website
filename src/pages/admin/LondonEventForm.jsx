@@ -430,7 +430,12 @@ export default function LondonEventForm() {
             <button
               type="button"
               disabled={saving}
-              onClick={() => handleSubmit(null, { publish: true })}
+              onClick={(e) => {
+                // A type="button" skips the browser's required / url checks that
+                // the Update button gets, so run them before publishing.
+                if (e.currentTarget.form && !e.currentTarget.form.reportValidity()) return
+                handleSubmit(null, { publish: true })
+              }}
               className="px-6 py-3 rounded-xl border-2 border-primary text-primary font-bold text-sm hover:bg-primary/5 transition-colors disabled:opacity-50"
             >
               {saving ? 'Saving...' : 'Save & Publish'}

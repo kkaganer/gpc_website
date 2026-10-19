@@ -700,16 +700,20 @@ export function createRenderers(
   // "Fri 12 Jun, 10.30am · Charlton House Library · £10". Price is appended only
   // when it is not free, because a FREE row already carries the green plate and
   // saying it twice makes the plate look like decoration.
-  function eventMetaLine(ev: EventData, opts: { withPrice?: boolean; withVenue?: boolean } = {}): string {
+  function eventMetaLine(ev: EventData, opts: { withPrice?: boolean; venueOnTitle?: boolean } = {}): string {
     const bits: string[] = []
     const when: string[] = []
     if (ev.date) when.push(formatDateShort(ev.date))
     if (ev.time) when.push(escapeHtml(ev.time))
     if (when.length) bits.push(when.join(', '))
-    const where = ev.location || ev.venue
-    // Picks pass withVenue:false because the venue now sits on the title line
-    // ("Sensory Play for Babies — Quaggy"); the long-form list keeps it here.
-    if (where && opts.withVenue !== false) bits.push(escapeHtml(where))
+    // Picks carry the venue on the title line ("Sensory Play for Babies — Quaggy"),
+    // so their meta line shows only the street address, and only when the title
+    // has a venue name and the address says something different. The long-form
+    // list keeps the original "location, else venue" rule.
+    const where = opts.venueOnTitle
+      ? (ev.venue && ev.location && ev.location !== ev.venue ? ev.location : null)
+      : ev.location || ev.venue
+    if (where) bits.push(escapeHtml(where))
     if (ev.age_range) bits.push(`Age ${escapeHtml(ev.age_range)}`)
     if (opts.withPrice && !ev.is_free && ev.price) bits.push(escapeHtml(ev.price))
     return bits.join(' &middot; ')
@@ -895,12 +899,16 @@ export function createRenderers(
     const rule = lead ? '' : `border-top:1px solid ${C.hairline};`
     const pad = lead ? '22px 22px 18px 22px' : '16px 22px'
 
-    const meta = eventMetaLine(ev, { withPrice: true, withVenue: false })
+    const meta = eventMetaLine(ev, { withPrice: true, venueOnTitle: true })
     const free = ev.is_free ? `<div style="padding-bottom:${lead ? '8px' : '6px'};">${freePill(lead ? 'lead' : 'row')}</div>` : ''
 
-    const where = ev.location || ev.venue
-    const venueSuffix = where
-      ? ` <span style="font-weight:400;color:${C.muted};">&mdash; ${escapeHtml(where)}</span>`
+    // The venue NAME beside the title, as Aster asked ("Sensory Play for Babies —
+    // Quaggy") and as the long-form list already does; the street address only
+    // stands in when there is no venue name. Clickable in the editor preview.
+    const titleField = ev.venue ? 'venue' : 'location'
+    const titleWhere = ev.venue || ev.location
+    const venueSuffix = titleWhere
+      ? ` <span style="font-weight:400;color:${C.muted};"${editAttr(blockId, titleField, evId)}>&mdash; ${escapeHtml(titleWhere)}</span>`
       : ''
     const title = lead
       ? `<div style="font-family:${F.heading};font-weight:700;font-size:22px;line-height:29px;color:${C.dark};"><span${editAttr(blockId, 'title', evId)}>${escapeHtml(ev.title || '')}</span>${venueSuffix}</div>`
@@ -1360,7 +1368,7 @@ export function createRenderers(
         ${senderInfo ? `<div>${senderInfo}</div>` : ''}
         <div><a href="${B.instagramUrl}" target="_blank" style="color:#ffffff;text-decoration:none;font-weight:700;line-height:44px;">${escapeHtml(B.instagramHandle)}</a></div>
         <div style="padding-bottom:8px;"><a href="${B.websiteUrl}" target="_blank" style="color:rgba(255,255,255,.6);text-decoration:underline;">www.gpccommunity.co.uk</a></div>
-        <div style="padding-bottom:8px;"><a href="${B.websiteUrl}whats-on?submit=1" target="_blank" style="color:#ffffff;text-decoration:underline;font-weight:700;">Got an event? Submit it for a future guide</a></div>
+        <div style="padding-bottom:8px;"><a href="${siteUrl('whats-on?submit=1')}" target="_blank" style="color:#ffffff;text-decoration:underline;font-weight:700;">Got an event? Submit it for a future guide</a></div>
         <div style="font-size:12px;line-height:18px;">While we try to ensure accuracy, we take no responsibility for the information above. Please check before travelling.</div>
         <div><span${editAttr(block.id, 'unsubscribeLabel')}>${unsubscribeLabel}</span> <a href="${unsubscribeUrl}" style="color:rgba(255,255,255,.6);text-decoration:underline;line-height:36px;">Unsubscribe</a></div>
         ${espCreditUrl && espCreditLabel ? `<div style="font-size:12px;line-height:18px;"><a href="${espCreditUrl}" target="_blank" style="color:rgba(255,255,255,.45);text-decoration:underline;">${espCreditLabel}</a></div>` : ''}

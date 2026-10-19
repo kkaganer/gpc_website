@@ -926,8 +926,15 @@ function wrapHtmlSelection(block, onChange, tag) {
   const text = block.htmlContent || ''
   const start = ta ? ta.selectionStart : text.length
   const end = ta ? ta.selectionEnd : text.length
+  let open = `<${tag}>`
+  if (tag === 'a') {
+    // Ask for the address up front: a placeholder href would pass the
+    // sanitiser's https? check and ship as a dead link if left unedited.
+    const href = typeof window !== 'undefined' ? window.prompt('Link address', 'https://') : null
+    if (!href || !/^https?:\/\/[^\s"<>]+\.[^\s"<>]+$/i.test(href.trim())) return
+    open = `<a href="${href.trim()}">`
+  }
   const sel = text.slice(start, end) || (tag === 'a' ? 'link text' : tag === 'strong' ? 'bold text' : 'italic text')
-  const open = tag === 'a' ? '<a href="https://">' : `<${tag}>`
   onChange({ htmlContent: text.slice(0, start) + open + sel + `</${tag}>` + text.slice(end) })
 }
 
@@ -1341,8 +1348,10 @@ function BlockFields({ block, resolvedData, focusRequest, onChange, onOverrideCh
     case 'textBlock':
       return (
         <div className="space-y-3">
-          <label className="block">
-            <span className="text-xs font-semibold text-gray-700">HTML content</span>
+          {/* A div, not a label: a label wrapping the toolbar points at its first
+              control — the B button — so clicking the caption inserted bold text. */}
+          <div className="block">
+            <label htmlFor={`textblock-${block.id}`} className="text-xs font-semibold text-gray-700">HTML content</label>
             <div className="mt-1 flex gap-1">
               <button type="button" onClick={() => wrapHtmlSelection(block, onChange, 'strong')} className="px-2 py-1 rounded border border-gray-200 text-xs font-bold hover:bg-gray-50" title="Bold">B</button>
               <button type="button" onClick={() => wrapHtmlSelection(block, onChange, 'em')} className="px-2 py-1 rounded border border-gray-200 text-xs italic hover:bg-gray-50" title="Italic">I</button>
@@ -1358,10 +1367,10 @@ function BlockFields({ block, resolvedData, focusRequest, onChange, onOverrideCh
             />
             <p className="text-xs text-gray-500 mt-1">
               Select text, then B / I / Link to wrap it — or type <code>&lt;strong&gt;</code>,
-              <code>&lt;em&gt;</code> and <code>&lt;a href&gt;</code> yourself. For a link, set the
-              address in the inserted <code>href</code>. Spell-check is your browser&rsquo;s.
+              <code>&lt;em&gt;</code> and <code>&lt;a href&gt;</code> yourself. Link asks for the
+              address. Spell-check is your browser&rsquo;s.
             </p>
-          </label>
+          </div>
           <label className="block">
             <span className="text-xs font-semibold text-gray-700">Alignment</span>
             <select

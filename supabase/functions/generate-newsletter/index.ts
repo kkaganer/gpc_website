@@ -133,14 +133,17 @@ async function resolveDataForConfig(
     if (filter.source === 'london_events') {
       q = q.eq('approved', true).eq('is_recurring', false)
       if (filter.areas === 'se-london') {
-        // Include approved events with NO area set, not just the named boroughs:
-        // a null area matches neither `in` nor `not in`, so community listings
-        // that never got an area were being silently dropped from the picks.
+        // Include approved events with NO area — NULL or the empty string — not
+        // just the named boroughs. Community submissions have no area field and
+        // save '', which matches neither `in` nor `is null`; they were being left
+        // out of the picks (and counted as "further to travel" instead).
         const inList = SE_LONDON_AREAS.map((a) => `"${a}"`).join(',')
-        q = q.or(`area.in.(${inList}),area.is.null`)
+        q = q.or(`area.in.(${inList}),area.is.null,area.eq.""`)
       } else if (filter.areas === 'outside-se-london') {
+        // A blank area means "unknown, probably local" (see above), never "far
+        // away". `not in` already drops NULL; '' has to be dropped explicitly.
         const csv = `(${SE_LONDON_AREAS.map((a) => `"${a}"`).join(',')})`
-        q = q.not('area', 'in', csv)
+        q = q.not('area', 'in', csv).neq('area', '')
       }
     }
 
@@ -229,7 +232,20 @@ async function resolveDataForConfig(
         // overlap rule and would otherwise print twice in one email.
         const rows = await runEventSectionQuery(es)
         const fresh = rows.filter((r) => !r.id || !claimed.has(String(r.id)))
-        for (const r of fresh) if (r.id) claimed.add(String(r.id))
+        // Claim what this section PRINTS — and what the admin excluded from it —
+        // but not the rows past its "show at most" cap. Those never appear here,
+        // so a later section may still use them instead of them vanishing from
+        // both. (The renderer applies exclusions, then the cap, in this order.)
+        const cap = Number.isInteger(es.limit) && (es.limit as number) > 0 ? (es.limit as number) : Infinity
+        let printed = 0
+        for (const r of fresh) {
+          const o = r.id ? es.overrides?.[String(r.id)] : undefined
+          if (!(o ? { ...r, ...o } : r).excluded) {
+            if (printed >= cap) continue
+            printed++
+          }
+          if (r.id) claimed.add(String(r.id))
+        }
         resolved.autoEventsByBlockId[block.id] = fresh
       } else if (es.eventIds && es.eventIds.length > 0) {
         const source = es.filter?.source || 'london_events'

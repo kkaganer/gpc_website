@@ -498,8 +498,9 @@ export default function LondonEventsManager() {
       }
       if (!data?.success) throw new Error(data?.error || 'Failed to parse email')
       setParseResult(data)
-      setEmailText('')
-      setPosterUrl('')
+      // Clear only what was parsed: a poster run leaves any pasted email intact.
+      if (posterUrl) setPosterUrl('')
+      else setEmailText('')
       setShowEmailModal(false)
       // The new rows are unapproved, so send the admin where they actually landed.
       setTab('pending')
@@ -940,9 +941,9 @@ export default function LondonEventsManager() {
               value={emailText}
               onChange={(e) => setEmailText(e.target.value)}
               rows={10}
-              placeholder="Paste the email content here..."
-              className="mt-4 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-              disabled={parsing}
+              placeholder={posterUrl ? 'A poster is attached — remove it above to parse an email instead.' : 'Paste the email content here...'}
+              className="mt-4 w-full px-4 py-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none disabled:bg-gray-50"
+              disabled={parsing || !!posterUrl}
             />
 
             <div className="flex gap-3 mt-4 justify-end">

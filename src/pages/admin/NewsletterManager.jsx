@@ -94,14 +94,26 @@ export default function NewsletterManager() {
   useEffect(() => {
     let cancelled = false
     async function fetchClicks() {
-      let query = supabase
-        .from('advertiser_clicks')
-        .select('advertiser_id, source, newsletter_advertisers(advertiser_name, ad_type)')
-      if (clicksRange === 'week') query = query.eq('edition_date', weekOf)
-      const { data, error } = await query
-      if (cancelled || error) {
-        if (!cancelled && error) setClicks([])
-        return
+      // Paged: PostgREST caps a response at 1,000 rows without saying so, so an
+      // all-time rollup read in one go would silently undercount once clicks pass
+      // that. Ordered by the primary key so pages never overlap or skip a row.
+      const PAGE = 1000
+      let data = []
+      for (let from = 0; ; from += PAGE) {
+        let query = supabase
+          .from('advertiser_clicks')
+          .select('advertiser_id, source, newsletter_advertisers(advertiser_name, ad_type)')
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (clicksRange === 'week') query = query.eq('edition_date', weekOf)
+        const { data: page, error } = await query
+        if (cancelled) return
+        if (error) {
+          setClicks([])
+          return
+        }
+        data = data.concat(page || [])
+        if (!page || page.length < PAGE) break
       }
       // Rolled up here rather than in SQL: the volumes are small, and a count
       // aggregate would need a view of its own for one admin panel.

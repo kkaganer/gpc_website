@@ -125,32 +125,71 @@ export function validateActivityPatch(patch) {
   if (patch.admin_start_date && patch.admin_end_date && patch.admin_end_date < patch.admin_start_date) {
     errors.push('End date cannot be before the start date.')
   }
+  // publish_activity keys the pinned run on the START date; an end date on its
+  // own would be saved and then silently ignored.
+  if (patch.admin_end_date && !patch.admin_start_date) {
+    errors.push('Add a start date for the run — an end date on its own is ignored.')
+  }
   return errors
 }
 
+// Units an admin might type after an age. A bare number means years.
+const MONTH_UNIT = /^(?:months?|mths?|mos?)$/
+const YEAR_UNIT = /^(?:years?|yrs?|y|yo)$/
+const ALL_AGES = new Set(['', 'all ages', 'all', 'any', 'any age', 'all welcome', 'everyone'])
+
 /**
- * Parse a free-text age ("0-5", "0-18 months", "3+", "All ages") into
- * { min, max } months. Months are the system of record on the Discovery side,
- * so this lets the panel offer the same free-text age box as the other two
- * forms without losing the structured months. Rough inverse of the SQL
- * discovery_age_text(); unparseable text (e.g. "pre-walkers") becomes all ages.
+ * Parse a free-text age ("0-5", "0-18 months", "2-4 yrs", "3+", "18 months",
+ * "All ages") into { min, max, recognised } months. Months are the system of
+ * record on the Discovery side (the under-5 publish gating keys off them), so
+ * this lets the panel offer the same free-text age box as the other two forms
+ * without losing them. Reads every format the SQL discovery_age_text() writes.
+ * Text it cannot read comes back recognised:false — never quietly "all ages".
  */
 export function ageTextToMonths(text) {
-  const s = String(text ?? '').trim().toLowerCase()
-  if (s === '' || s === 'all ages' || s === 'all' || s === 'any' || s === 'all welcome') {
-    return { min: null, max: null }
+  const s = String(text ?? '').trim().toLowerCase().replace(/[–—]/g, '-').replace(/\s+/g, ' ')
+  if (ALL_AGES.has(s)) return { min: null, max: null, recognised: true }
+  const toMonths = (n, unit) => {
+    const v = parseFloat(n)
+    if (unit && MONTH_UNIT.test(unit)) return Math.round(v)
+    if (!unit || YEAR_UNIT.test(unit)) return Math.round(v * 12)
+    return NaN
   }
-  const yToM = (y) => Math.round(parseFloat(y) * 12)
+  const result = (min, max) =>
+    Number.isNaN(min) || Number.isNaN(max)
+      ? { min: null, max: null, recognised: false }
+      : { min, max, recognised: true }
+  const NUM = String.raw`(\d+(?:\.\d+)?)`
+  const UNIT = String.raw`(?:\s*([a-z]+))?(?:\s+old)?`
+  const re = (body) => new RegExp(`^${body}$`)
   let m
-  if ((m = s.match(/^(\d+)\s*[-–]\s*(\d+)\s*months?$/))) return { min: +m[1], max: +m[2] }
-  if ((m = s.match(/^(\d+)\s*months?\s*[-–]\s*(\d+(?:\.\d+)?)\s*years?$/))) return { min: +m[1], max: yToM(m[2]) }
-  if ((m = s.match(/^(?:up to|under)\s*(\d+(?:\.\d+)?)/))) return { min: null, max: yToM(m[1]) }
-  if ((m = s.match(/^(\d+)\s*months?\s*\+$/)) || (m = s.match(/^(\d+)\s*\+\s*months?$/))) return { min: +m[1], max: null }
-  if ((m = s.match(/^(\d+(?:\.\d+)?)\s*years?\s*\+$/)) || (m = s.match(/^(\d+(?:\.\d+)?)\s*\+\s*(?:years?)?$/))) return { min: yToM(m[1]), max: null }
-  if ((m = s.match(/^(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*(?:years?)?$/))) return { min: yToM(m[1]), max: yToM(m[2]) }
-  if ((m = s.match(/^(\d+(?:\.\d+)?)\s*years?$/))) return { min: yToM(m[1]), max: yToM(m[1]) }
-  // Unparseable free text: no structured months, treat as all ages.
-  return { min: null, max: null }
+  // A range: "0-5", "0-18 months", "2-4 yrs", "6 months - 5 years". A unit given
+  // only once ("0-18 months") applies to both ends.
+  if ((m = s.match(re(`${NUM}${UNIT}\\s*-\\s*${NUM}${UNIT}`)))) {
+    return result(toMonths(m[1], m[2] || m[4]), toMonths(m[3], m[4] || m[2]))
+  }
+  if ((m = s.match(re(`(?:up to|upto|under)\\s*${NUM}${UNIT}`)))) return result(null, toMonths(m[1], m[2]))
+  if ((m = s.match(re(`${NUM}${UNIT}\\s*\\+`))) || (m = s.match(re(`${NUM}\\s*\\+${UNIT}`)))) {
+    return result(toMonths(m[1], m[2]), null)
+  }
+  if ((m = s.match(re(`${NUM}${UNIT}`)))) {
+    const v = toMonths(m[1], m[2])
+    return result(v, v)
+  }
+  return { min: null, max: null, recognised: false }
+}
+
+/** How the panel will store an age, in words — shown live under the box. */
+export function describeAgeText(text) {
+  const { min, max, recognised } = ageTextToMonths(text)
+  if (!recognised) {
+    return { ok: false, label: `Can't read "${String(text ?? '').trim()}" as an age — try e.g. 0-5, 18 months, 3+ or All ages.` }
+  }
+  const f = (n) => (n >= 24 && n % 12 === 0 ? `${n / 12} years` : `${n} months`)
+  if (min == null && max == null) return { ok: true, label: 'Saves as: all ages' }
+  if (min == null) return { ok: true, label: `Saves as: up to ${f(max)}` }
+  if (max == null) return { ok: true, label: `Saves as: ${f(min)} and over` }
+  return { ok: true, label: `Saves as: ${min === max ? f(min) : `${f(min)} to ${f(max)}`}` }
 }
 
 /**

@@ -13,7 +13,7 @@ const SITE = 'https://gpccommunity.co.uk'
 const GENERIC = {
   title: 'Greenwich Parents & Carers | Community for Local Families',
   description:
-    'Greenwich Parents & Carers (GPC) - A community of 1,800+ local parents running events and activities for families in Greenwich, London.',
+    'Greenwich Parents & Carers (GPC) - A community of 2,000+ local parents running events and activities for families in Greenwich, London.',
   image: `${SITE}/images/hero-banner.svg`,
 }
 

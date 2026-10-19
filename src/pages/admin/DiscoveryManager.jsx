@@ -477,8 +477,12 @@ export default function DiscoveryManager() {
   // that is on would be the only one you could never read a number for.
   const counts = gapCounts(activities)
   const sources = sourceOptions(activities)
+  // A source with no rows on this tab (tab switched, or its last row was just
+  // approved) counts as "all sources" rather than silently emptying the list
+  // behind a dropdown that can no longer show it.
+  const activeSource = sources.some((s) => s.id === source) ? source : ''
   // Search AND source AND chips AND the AI-ages filter; the chips OR among themselves.
-  const visible = filterActivities(activities, { search, gaps, onlyLlmJudged, source })
+  const visible = filterActivities(activities, { search, gaps, onlyLlmJudged, source: activeSource })
   const narrowed = visible.length !== activities.length
 
   // Group AFTER filtering: with the AI-ages filter on, a group has to mean
@@ -524,6 +528,7 @@ export default function DiscoveryManager() {
   useEffect(() => {
     setSelected(new Set())
     setExpanded(new Set())
+    setSource('')
   }, [tab])
 
   function toggleGap(key) {
@@ -825,7 +830,7 @@ export default function DiscoveryManager() {
       {sources.length > 1 && (
         <div className="mb-4 max-w-md">
           <select
-            value={source}
+            value={activeSource}
             onChange={(e) => setSource(e.target.value)}
             aria-label="Filter by source"
             className="w-full py-2.5 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -908,9 +913,9 @@ export default function DiscoveryManager() {
           </span>
         )}
 
-        {(search.trim() || gaps.size > 0) && (
+        {(search.trim() || gaps.size > 0 || activeSource) && (
           <button
-            onClick={() => { setSearch(''); setGaps(new Set()) }}
+            onClick={() => { setSearch(''); setGaps(new Set()); setSource('') }}
             className="text-xs font-bold text-gray-500 hover:text-dark underline underline-offset-2"
           >
             Clear filters
@@ -980,11 +985,11 @@ export default function DiscoveryManager() {
         <p className="text-gray-500 text-sm py-12 text-center">
           {/* Name the filter that emptied the screen. "Nothing pending" under an
               active search reads as a lost queue rather than a narrow one. */}
-          {search.trim() || gaps.size > 0 ? (
+          {search.trim() || gaps.size > 0 || activeSource ? (
             <>
               No {tab} listings match{search.trim() ? ` “${search.trim()}”` : ' those filters'}.{' '}
               <button
-                onClick={() => { setSearch(''); setGaps(new Set()) }}
+                onClick={() => { setSearch(''); setGaps(new Set()); setSource('') }}
                 className="font-bold text-primary hover:underline"
               >
                 Clear filters

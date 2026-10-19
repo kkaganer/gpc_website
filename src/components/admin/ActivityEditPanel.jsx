@@ -5,6 +5,7 @@ import {
   buildActivityPatch,
   validateActivityPatch,
   withAgeMonths,
+  describeAgeText,
 } from '../../lib/discoveryActivity'
 import { geocodePostcode } from '../../lib/geocode'
 
@@ -64,6 +65,13 @@ export default function ActivityEditPanel({ activity, onClose, onSaved }) {
     if (e && e.preventDefault) e.preventDefault()
     setError('')
 
+    // An edited age that can't be read would otherwise save as "all ages" and
+    // quietly change what the under-5 gating lets through. Stop and say so.
+    if (ageEdited && !ageReading.ok) {
+      setError(ageReading.label)
+      return
+    }
+
     const patch = buildActivityPatch(withAgeMonths(form, activity.age_range))
     const problems = validateActivityPatch(patch)
     if (problems.length) {
@@ -91,6 +99,8 @@ export default function ActivityEditPanel({ activity, onClose, onSaved }) {
   }
 
   const website = activity.deep_link || activity.booking_url || activity.source_url
+  const ageEdited = (form.age_range ?? '') !== (activity.age_range ?? '')
+  const ageReading = describeAgeText(form.age_range)
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -276,6 +286,11 @@ export default function ActivityEditPanel({ activity, onClose, onSaved }) {
               className={inputClass}
               placeholder="e.g. 0-5, All ages"
             />
+            {ageEdited && (
+              <span className={`block text-xs mt-1 ${ageReading.ok ? 'text-gray-500' : 'text-red-600 font-semibold'}`}>
+                {ageReading.label}
+              </span>
+            )}
           </Field>
 
           <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-3 space-y-3">
@@ -364,7 +379,12 @@ export default function ActivityEditPanel({ activity, onClose, onSaved }) {
             {activity.status !== 'published' && (
               <button
                 type="button"
-                onClick={() => handleSubmit(null, { publish: true })}
+                onClick={(e) => {
+                  // A type="button" skips the browser's own checks (the url
+                  // fields), so run them before publishing, as Save does.
+                  if (e.currentTarget.form && !e.currentTarget.form.reportValidity()) return
+                  handleSubmit(null, { publish: true })
+                }}
                 disabled={saving}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl border-2 border-primary text-primary text-sm font-bold hover:bg-primary/5 transition-colors disabled:opacity-50"
               >
