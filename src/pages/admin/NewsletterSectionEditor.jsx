@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Coffee,
 } from 'lucide-react'
+import ImageUpload from '../../components/ui/ImageUpload'
 import {
   DndContext,
   closestCenter,
@@ -1327,16 +1328,17 @@ function BlockFields({ block, resolvedData, focusRequest, onChange, onOverrideCh
     case 'imageBlock':
       return (
         <div className="space-y-3">
-          <label className="block">
-            <span className="text-xs font-semibold text-gray-700">Image URL</span>
-            <input
-              type="url"
+          <div className="block">
+            <span className="text-xs font-semibold text-gray-700">Image</span>
+            <p className="text-[11px] text-gray-400 leading-snug mb-1">
+              Upload a photo (e.g. a shot of what the community has been up to), or
+              paste an image URL. Add a line in Caption for a short note.
+            </p>
+            <ImageUpload
               value={block.imageUrl || ''}
-              onChange={(e) => onChange({ imageUrl: e.target.value })}
-              className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-              placeholder="https://…"
+              onChange={(url) => onChange({ imageUrl: url })}
             />
-          </label>
+          </div>
           <label className="block">
             <span className="text-xs font-semibold text-gray-700">Link URL (optional)</span>
             <input
