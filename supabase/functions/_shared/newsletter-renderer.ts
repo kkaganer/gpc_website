@@ -700,14 +700,16 @@ export function createRenderers(
   // "Fri 12 Jun, 10.30am · Charlton House Library · £10". Price is appended only
   // when it is not free, because a FREE row already carries the green plate and
   // saying it twice makes the plate look like decoration.
-  function eventMetaLine(ev: EventData, opts: { withPrice?: boolean } = {}): string {
+  function eventMetaLine(ev: EventData, opts: { withPrice?: boolean; withVenue?: boolean } = {}): string {
     const bits: string[] = []
     const when: string[] = []
     if (ev.date) when.push(formatDateShort(ev.date))
     if (ev.time) when.push(escapeHtml(ev.time))
     if (when.length) bits.push(when.join(', '))
     const where = ev.location || ev.venue
-    if (where) bits.push(escapeHtml(where))
+    // Picks pass withVenue:false because the venue now sits on the title line
+    // ("Sensory Play for Babies — Quaggy"); the long-form list keeps it here.
+    if (where && opts.withVenue !== false) bits.push(escapeHtml(where))
     if (ev.age_range) bits.push(`Age ${escapeHtml(ev.age_range)}`)
     if (opts.withPrice && !ev.is_free && ev.price) bits.push(escapeHtml(ev.price))
     return bits.join(' &middot; ')
@@ -893,12 +895,16 @@ export function createRenderers(
     const rule = lead ? '' : `border-top:1px solid ${C.hairline};`
     const pad = lead ? '22px 22px 18px 22px' : '16px 22px'
 
-    const meta = eventMetaLine(ev, { withPrice: true })
+    const meta = eventMetaLine(ev, { withPrice: true, withVenue: false })
     const free = ev.is_free ? `<div style="padding-bottom:${lead ? '8px' : '6px'};">${freePill(lead ? 'lead' : 'row')}</div>` : ''
 
+    const where = ev.location || ev.venue
+    const venueSuffix = where
+      ? ` <span style="font-weight:400;color:${C.muted};">&mdash; ${escapeHtml(where)}</span>`
+      : ''
     const title = lead
-      ? `<div style="font-family:${F.heading};font-weight:700;font-size:22px;line-height:29px;color:${C.dark};"${editAttr(blockId, 'title', evId)}>${escapeHtml(ev.title || '')}</div>`
-      : `<div style="font-family:${F.heading};font-weight:600;font-size:18px;line-height:25px;color:${C.dark};"${editAttr(blockId, 'title', evId)}>${escapeHtml(ev.title || '')}</div>`
+      ? `<div style="font-family:${F.heading};font-weight:700;font-size:22px;line-height:29px;color:${C.dark};"><span${editAttr(blockId, 'title', evId)}>${escapeHtml(ev.title || '')}</span>${venueSuffix}</div>`
+      : `<div style="font-family:${F.heading};font-weight:600;font-size:18px;line-height:25px;color:${C.dark};"><span${editAttr(blockId, 'title', evId)}>${escapeHtml(ev.title || '')}</span>${venueSuffix}</div>`
 
     // Every pick shows its description when it has one; the lead simply gets the
     // larger title type. Descriptions on every pick give the editor something to
