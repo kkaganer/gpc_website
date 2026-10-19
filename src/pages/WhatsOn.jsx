@@ -6,6 +6,7 @@ import LondonEventCard from '../components/whatson/LondonEventCard'
 import EventMap from '../components/whatson/EventMap'
 import SubmitEventModal from '../components/whatson/SubmitEventModal'
 import { useLondonEvents } from '../hooks/useLondonEvents'
+import { neighbourhoodForPostcode } from '../lib/greenwichAreas'
 
 function ageMatchesRange(age, range) {
   if (!range) return true
@@ -43,6 +44,7 @@ const defaultFilters = {
   category: 'All',
   price: 'All',
   childAge: '',
+  neighbourhood: '',
 }
 
 export default function WhatsOn() {
@@ -64,6 +66,7 @@ export default function WhatsOn() {
     if (filters.price === 'Free' && !e.is_free) return false
     if (filters.price === 'Paid' && e.is_free) return false
     if (filters.childAge !== '' && !ageMatchesRange(parseInt(filters.childAge), e.age_range)) return false
+    if (filters.neighbourhood && neighbourhoodForPostcode(e.postcode) !== filters.neighbourhood) return false
     if (filters.postcodeLat && filters.postcodeLng && e.lat && e.lng) {
       const dist = getDistanceMiles(filters.postcodeLat, filters.postcodeLng, e.lat, e.lng)
       if (dist > filters.radius) return false

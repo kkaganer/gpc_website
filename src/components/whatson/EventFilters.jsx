@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { MapPin, X } from 'lucide-react'
 import { geocodePostcode } from '../../lib/geocode'
+import { GREENWICH_NEIGHBOURHOODS } from '../../lib/greenwichAreas'
 
 const categories = ['All', 'Family', 'Outdoor', 'Arts', 'Sports', 'Music', 'Food']
 const priceOptions = ['All', 'Free', 'Paid']
@@ -150,6 +151,18 @@ export default function EventFilters({ filters, onChange }) {
         <option value="0">Under 1</option>
         {[1,2,3,4,5,6,7,8,9,10,11,12].map((a) => (
           <option key={a} value={a}>{a} year{a !== 1 ? 's' : ''}</option>
+        ))}
+      </select>
+
+      {/* Greenwich neighbourhood */}
+      <select
+        value={filters.neighbourhood || ''}
+        onChange={(e) => setFilter('neighbourhood', e.target.value)}
+        className={selectClass}
+      >
+        <option value="">Greenwich area</option>
+        {GREENWICH_NEIGHBOURHOODS.map((n) => (
+          <option key={n} value={n}>{n}</option>
         ))}
       </select>
 
