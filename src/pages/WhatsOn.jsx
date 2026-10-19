@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router'
 import { Plus, List, Map as MapIcon } from 'lucide-react'
 import EventFilters from '../components/whatson/EventFilters'
 import LondonEventCard from '../components/whatson/LondonEventCard'
@@ -70,9 +71,17 @@ export default function WhatsOn() {
     return true
   })
 
+  const [searchParams, setSearchParams] = useSearchParams()
+
   useEffect(() => {
     document.title = "What's On | Greenwich Parents & Carers"
   }, [])
+
+  // A ?submit=1 link (from the homepage, the nav or the newsletter) opens the
+  // submit-event modal directly, so submitting is one click from anywhere.
+  useEffect(() => {
+    if (searchParams.get('submit') === '1') setShowSubmit(true)
+  }, [searchParams])
 
   function handleCardClick(id) {
     setActiveEventId(id)
@@ -198,7 +207,17 @@ export default function WhatsOn() {
       </div>
 
       {/* Submit modal */}
-      {showSubmit && <SubmitEventModal onClose={() => setShowSubmit(false)} />}
+      {showSubmit && (
+        <SubmitEventModal
+          onClose={() => {
+            setShowSubmit(false)
+            if (searchParams.get('submit')) {
+              searchParams.delete('submit')
+              setSearchParams(searchParams, { replace: true })
+            }
+          }}
+        />
+      )}
     </div>
   )
 }

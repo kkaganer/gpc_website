@@ -41,6 +41,9 @@ export default function Hero() {
             <Button variant="secondary" href="/whats-on">
               See What's On
             </Button>
+            <Button variant="secondary" href="/whats-on?submit=1">
+              Submit an Event
+            </Button>
           </div>
 
           <div className="flex flex-wrap items-center gap-4 mt-6 text-sm text-gray-600">

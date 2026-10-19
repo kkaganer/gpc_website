@@ -491,6 +491,7 @@ export function renderWhatsapp(
   // message's job is to hand over the newsletter; the newsletter's own button
   // does the handover to the listings.
   const url = newsletterUrl(config?.metadata?.weekOf, { siteUrl: opts.siteUrl })
+  const submitUrl = `${(opts.siteUrl || DEFAULT_BRAND.websiteUrl).replace(/\/+$/, '')}/whats-on?submit=1`
 
   const events: EventData[] = []
   for (const list of Object.values(resolved?.autoEventsByBlockId || {})) {
@@ -536,6 +537,8 @@ export function renderWhatsapp(
     `${countPhrase}${highlights}.`,
     '',
     `Read it here: ${url}`,
+    '',
+    `Got an event? Add it: ${submitUrl}`,
   ]
 
   let out = lines.join('\n')
@@ -1351,6 +1354,7 @@ export function createRenderers(
         ${senderInfo ? `<div>${senderInfo}</div>` : ''}
         <div><a href="${B.instagramUrl}" target="_blank" style="color:#ffffff;text-decoration:none;font-weight:700;line-height:44px;">${escapeHtml(B.instagramHandle)}</a></div>
         <div style="padding-bottom:8px;"><a href="${B.websiteUrl}" target="_blank" style="color:rgba(255,255,255,.6);text-decoration:underline;">www.gpccommunity.co.uk</a></div>
+        <div style="padding-bottom:8px;"><a href="${B.websiteUrl}whats-on?submit=1" target="_blank" style="color:#ffffff;text-decoration:underline;font-weight:700;">Got an event? Submit it for a future guide</a></div>
         <div style="font-size:12px;line-height:18px;">While we try to ensure accuracy, we take no responsibility for the information above. Please check before travelling.</div>
         <div><span${editAttr(block.id, 'unsubscribeLabel')}>${unsubscribeLabel}</span> <a href="${unsubscribeUrl}" style="color:rgba(255,255,255,.6);text-decoration:underline;line-height:36px;">Unsubscribe</a></div>
         ${espCreditUrl && espCreditLabel ? `<div style="font-size:12px;line-height:18px;"><a href="${espCreditUrl}" target="_blank" style="color:rgba(255,255,255,.45);text-decoration:underline;">${espCreditLabel}</a></div>` : ''}
