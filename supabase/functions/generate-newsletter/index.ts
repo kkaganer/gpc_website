@@ -133,7 +133,11 @@ async function resolveDataForConfig(
     if (filter.source === 'london_events') {
       q = q.eq('approved', true).eq('is_recurring', false)
       if (filter.areas === 'se-london') {
-        q = q.in('area', SE_LONDON_AREAS)
+        // Include approved events with NO area set, not just the named boroughs:
+        // a null area matches neither `in` nor `not in`, so community listings
+        // that never got an area were being silently dropped from the picks.
+        const inList = SE_LONDON_AREAS.map((a) => `"${a}"`).join(',')
+        q = q.or(`area.in.(${inList}),area.is.null`)
       } else if (filter.areas === 'outside-se-london') {
         const csv = `(${SE_LONDON_AREAS.map((a) => `"${a}"`).join(',')})`
         q = q.not('area', 'in', csv)

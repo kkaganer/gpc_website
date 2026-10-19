@@ -17,6 +17,7 @@ import {
   GripVertical,
   AlertTriangle,
   Coffee,
+  MapPin,
 } from 'lucide-react'
 import ImageUpload from '../../components/ui/ImageUpload'
 import {
@@ -455,6 +456,19 @@ export default function NewsletterSectionEditor() {
         // show those as placeholders. Edit them to override.
         block = { ...base }
         break
+      case 'eventSection':
+        // A second events block, pre-set to "further to travel" — a couple of
+        // picks from outside SE London, like the old newsletter's far-afield
+        // section. Retune the Area, title or count in the panel.
+        block = {
+          ...base,
+          title: 'Further to travel',
+          layout: 'picks',
+          limit: 2,
+          mode: 'auto',
+          filter: { source: 'london_events', dateFrom: 0, dateTo: 7, areas: 'outside-se-london' },
+        }
+        break
       default:
         return
     }
@@ -785,6 +799,7 @@ function SectionSidebar({
             onClick={() => onAddBlock('editionCta')}
           />
           <AddBlockButton icon={Coffee} label="Coffee / donation" onClick={() => onAddBlock('donationStrip')} />
+          <AddBlockButton icon={MapPin} label="Further-afield events" onClick={() => onAddBlock('eventSection')} />
         </div>
       </div>
       {pendingRemoval && (
@@ -1041,6 +1056,20 @@ function BlockFields({ block, resolvedData, focusRequest, onChange, onOverrideCh
               />
             </label>
           </div>
+          {block.mode !== 'manual' && (
+            <label className="block">
+              <span className="text-xs font-semibold text-gray-700">Area</span>
+              <select
+                value={block.filter?.areas || 'se-london'}
+                onChange={(e) => onChange({ filter: { ...block.filter, areas: e.target.value } })}
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/50"
+              >
+                <option value="se-london">SE London (Greenwich &amp; nearby)</option>
+                <option value="outside-se-london">Further to travel (outside SE London)</option>
+                <option value="all">Everywhere</option>
+              </select>
+            </label>
+          )}
           <p className="text-[11px] text-gray-500 leading-snug">
             {isPicks
               ? 'Every pick shows its description when it has one. Leave "show at most" blank to print every match.'
