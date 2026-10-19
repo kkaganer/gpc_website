@@ -418,6 +418,48 @@ ${emailText}
 Return ONLY a valid JSON array of event objects. No markdown, no explanation.`
 }
 
+// Poster/flyer variant. Shares its field schema with buildPrompt above (kept in
+// step by hand); only the framing differs — this reads an uploaded image, not
+// email text. The image itself is attached as an input_image in the handler.
+function buildPosterPrompt(today: string): string {
+  const todayName = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    weekday: 'long',
+  }).format(new Date())
+
+  return `This is a POSTER or flyer for a children's, family or community event, class or group that Greenwich Parents & Carers may feature in our What's On listings. Read EVERYTHING on it — the headline, body text, dates, times, prices, venue, and any website or booking text — and extract every event it advertises.
+
+A poster often advertises SEVERAL SESSIONS — a baby class and a toddler class are TWO events; a holiday programme with three named workshops is THREE. Return one object per distinct listing. If it advertises no datable event, return an empty array [].
+
+For each event return these fields:
+- title: the name of the event or class
+- description: a short description in plain words (no more than a couple of sentences)
+- venue: the building or park name, e.g. "Greenwich Park", "Mycenae House"
+- location: the street address or the fullest location text given
+- postcode: the UK postcode, exactly as written
+- area: the London borough, if the poster names one
+- url: a booking or information link (type out any URL printed on the poster)
+- image_url: null (the poster image itself is not an event image link)
+- category: ONE of Family, Outdoor, Arts, Sports, Music, Food — pick the closest fit, or null if none fits
+- age_range: the ages it is for, e.g. "0-4", "All ages"
+- price: the price as written, e.g. "£5", "£8 per session", "Free"
+- is_free: true only if it is explicitly free
+- time: the time of day as written, e.g. "10:00 - 11:30", "10am"
+
+For WHEN it happens, REPORT WHAT THE POSTER SAYS — do not calculate anything:
+- A ONE-OFF (a single dated event): set "date" to that date as YYYY-MM-DD, leave "end_date" and "weekday" null.
+- A RUN (on for a stretch of days, e.g. "13-31 August", "until 31 August", a show's run): set "date" to the FIRST day and "end_date" to the LAST day, both YYYY-MM-DD. One event with a start and an end — not one object per day.
+- A WEEKLY REPEAT (e.g. "every Tuesday 10am"): set "weekday" to the day name ("Tuesday"), leave "date" null, put the time in "time". If it says when the term/block STARTS, put that in "start_date" as YYYY-MM-DD (not in "date"); if it says when it ENDS, put that in "end_date".
+- Leave "end_date" null unless the poster says when something ends. NEVER guess an end date, and never repeat the start date in it.
+- If the poster gives neither a date nor a repeating weekday, set all date fields to null.
+
+Today is ${today} (${todayName}). Use it to resolve relative phrases, and if a day and month are given with no year, choose the year that makes the date fall on or after today.
+
+Return null for anything the poster does not say. NEVER invent a postcode, price, link, date or age range — far better to leave a field null than to guess it.
+
+Return ONLY a valid JSON array of event objects. No markdown, no explanation.`
+}
+
 // ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
@@ -436,8 +478,9 @@ Deno.serve(async (req) => {
     }
 
     const emailText = typeof body?.emailText === 'string' ? body.emailText.trim() : ''
-    if (!emailText) {
-      throw new HttpError(400, 'emailText is required')
+    const imageUrl = typeof body?.imageUrl === 'string' ? body.imageUrl.trim() : ''
+    if (!emailText && !imageUrl) {
+      throw new HttpError(400, 'Provide emailText (an organiser email) or imageUrl (a poster image)')
     }
     if (emailText.length > MAX_EMAIL_CHARS) {
       throw new HttpError(400, `emailText is too long (${emailText.length} characters, max ${MAX_EMAIL_CHARS})`)
@@ -462,9 +505,17 @@ Deno.serve(async (req) => {
         input: [
           {
             role: 'system',
-            content: 'You are a helpful assistant that extracts structured event data from emails. Always respond with valid JSON arrays only, no markdown or extra text.',
+            content: 'You are a helpful assistant that extracts structured event data from emails and event posters. Always respond with valid JSON arrays only, no markdown or extra text.',
           },
-          { role: 'user', content: buildPrompt(emailText, today) },
+          imageUrl
+            ? {
+                role: 'user',
+                content: [
+                  { type: 'input_text', text: buildPosterPrompt(today) },
+                  { type: 'input_image', image_url: imageUrl },
+                ],
+              }
+            : { role: 'user', content: buildPrompt(emailText, today) },
         ],
       }),
     })
@@ -690,7 +741,7 @@ Deno.serve(async (req) => {
           age_range: clean(entry.age_range, 100),
           price,
           is_free: toBool(entry.is_free, price),
-          source: 'email',
+          source: imageUrl ? 'poster' : 'email',
           approved: false,
           is_recurring: isRecurring,
           day_of_week: dayOfWeekValue,

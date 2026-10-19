@@ -6,6 +6,7 @@ import { geocodePostcode } from '../../lib/geocode'
 import { useAllLondonEvents } from '../../hooks/useLondonEvents'
 import { runIngest, pollBatch } from '../../hooks/useDiscoveredActivities'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import ImageUpload from '../../components/ui/ImageUpload'
 
 // Index matches london_events.day_of_week (Sunday = 0), the convention
 // migration 009 and the newsletter renderer both use.
@@ -282,6 +283,7 @@ export default function LondonEventsManager() {
   const [backfillResult, setBackfillResult] = useState('')
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [emailText, setEmailText] = useState('')
+  const [posterUrl, setPosterUrl] = useState('')
   const [parsing, setParsing] = useState(false)
   const [parseError, setParseError] = useState('')
   const [parseResult, setParseResult] = useState(null)
@@ -482,7 +484,7 @@ export default function LondonEventsManager() {
     setParseResult(null)
     try {
       const { data, error: fnError } = await supabase.functions.invoke('parse-event-email', {
-        body: { emailText },
+        body: posterUrl ? { imageUrl: posterUrl } : { emailText },
       })
       // supabase-js throws on any non-2xx BEFORE reading the body, so fnError.message
       // is only ever the generic "non-2xx status code" and the function's own message
@@ -497,6 +499,7 @@ export default function LondonEventsManager() {
       if (!data?.success) throw new Error(data?.error || 'Failed to parse email')
       setParseResult(data)
       setEmailText('')
+      setPosterUrl('')
       setShowEmailModal(false)
       // The new rows are unapproved, so send the admin where they actually landed.
       setTab('pending')
@@ -567,10 +570,10 @@ export default function LondonEventsManager() {
           <button
             onClick={() => setShowEmailModal(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-primary text-primary text-sm font-bold hover:bg-primary/5 transition-colors"
-            title="Paste an email from an organiser and extract the event details into Pending"
+            title="Upload a poster or paste an organiser's email, and extract the event details into Pending"
           >
             <Mail size={18} />
-            Parse Email
+            Parse poster / email
           </button>
           <Link
             to="/admin/whats-on/new"
@@ -910,10 +913,10 @@ export default function LondonEventsManager() {
           {/* Backdrop dismiss is disabled while parsing so an in-flight request isn't orphaned. */}
           <div className="absolute inset-0 bg-black/40" onClick={() => !parsing && setShowEmailModal(false)} />
           <div className="relative bg-white rounded-2xl shadow-xl p-6 max-w-lg w-full mx-4">
-            <h3 className="font-heading font-bold text-lg text-dark">Parse Organiser Email</h3>
+            <h3 className="font-heading font-bold text-lg text-dark">Parse a poster or email</h3>
             <p className="text-gray-500 text-sm mt-1">
-              Paste an email from an organiser and the details are extracted into the Pending tab
-              for review before anything goes live.
+              Upload an event poster, or paste an organiser's email. Either way the details are
+              extracted into the Pending tab for review before anything goes live.
             </p>
 
             {parseError && (
@@ -921,6 +924,17 @@ export default function LondonEventsManager() {
                 {parseError}
               </div>
             )}
+
+            <div className="mt-4">
+              <span className="text-xs font-semibold text-gray-700">Upload a poster</span>
+              <div className="mt-1">
+                <ImageUpload value={posterUrl} onChange={setPosterUrl} />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 my-4 text-xs text-gray-400">
+              <span className="flex-1 h-px bg-gray-200" /> or paste an email <span className="flex-1 h-px bg-gray-200" />
+            </div>
 
             <textarea
               value={emailText}
@@ -933,7 +947,7 @@ export default function LondonEventsManager() {
 
             <div className="flex gap-3 mt-4 justify-end">
               <button
-                onClick={() => { setShowEmailModal(false); setEmailText(''); setParseError('') }}
+                onClick={() => { setShowEmailModal(false); setEmailText(''); setPosterUrl(''); setParseError('') }}
                 disabled={parsing}
                 className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-dark rounded-lg border border-gray-200 hover:border-gray-300 transition-colors disabled:opacity-50"
               >
@@ -941,11 +955,11 @@ export default function LondonEventsManager() {
               </button>
               <button
                 onClick={handleParseEmail}
-                disabled={parsing || !emailText.trim()}
+                disabled={parsing || (!emailText.trim() && !posterUrl)}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-primary to-dark rounded-lg hover:scale-[1.02] transition-transform disabled:opacity-50"
               >
                 <Sparkles size={16} />
-                {parsing ? 'Parsing...' : 'Parse Email'}
+                {parsing ? 'Parsing...' : posterUrl ? 'Parse poster' : 'Parse Email'}
               </button>
             </div>
           </div>
