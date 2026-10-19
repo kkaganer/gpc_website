@@ -453,13 +453,13 @@ function GroupRow({ group, open, onToggleOpen, selected, onToggleSelect, tab, on
  */
 export default function DiscoveryManager() {
   const [tab, setTab] = useState('pending')
-  const { activities, loading, error, refetch } = useDiscoveredActivities(tab)
+  const [source, setSource] = useState('')
+  const { activities, sourceRows, loading, error, refetch } = useDiscoveredActivities(tab, source)
   const [selected, setSelected] = useState(() => new Set())
   const [expanded, setExpanded] = useState(() => new Set())
   const [onlyLlmJudged, setOnlyLlmJudged] = useState(false)
   const [search, setSearch] = useState('')
   const [gaps, setGaps] = useState(() => new Set())
-  const [source, setSource] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   // The row the slide-over is pointed at, or null. Held as an id + the row so
@@ -476,7 +476,8 @@ export default function DiscoveryManager() {
   // the moment you ticked it could not tell you what it was hiding, and the one
   // that is on would be the only one you could never read a number for.
   const counts = gapCounts(activities)
-  const sources = sourceOptions(activities)
+  // From every row on this tab, not just the 500 that loaded — see the hook.
+  const sources = sourceOptions(sourceRows)
   // A source with no rows on this tab (tab switched, or its last row was just
   // approved) counts as "all sources" rather than silently emptying the list
   // behind a dropdown that can no longer show it.
@@ -835,11 +836,16 @@ export default function DiscoveryManager() {
             aria-label="Filter by source"
             className="w-full py-2.5 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
-            <option value="">All sources ({activities.length})</option>
+            <option value="">All sources ({sourceRows.length})</option>
             {sources.map((s) => (
               <option key={s.id} value={s.id}>{s.label} ({s.count})</option>
             ))}
           </select>
+          {!activeSource && activities.length >= 500 && sourceRows.length > activities.length && (
+            <p className="text-xs text-gray-500 mt-1">
+              Showing the {activities.length} most confident of {sourceRows.length}. Pick a source to see all of its listings.
+            </p>
+          )}
         </div>
       )}
 
@@ -853,7 +859,7 @@ export default function DiscoveryManager() {
                 tab === t ? 'bg-white shadow-sm text-dark' : 'text-gray-500 hover:text-dark'
               }`}
             >
-              {t} {tab === t ? `(${activities.length})` : ''}
+              {t} {tab === t ? `(${sourceRows.length || activities.length})` : ''}
             </button>
           ))}
         </div>

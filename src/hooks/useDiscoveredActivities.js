@@ -9,8 +9,9 @@ import { supabase } from '../lib/supabase'
  * activity into london_events as approved rows — so the public What's On page,
  * the map and the newsletter keep reading london_events exactly as they do now.
  */
-export function useDiscoveredActivities(status = 'pending') {
+export function useDiscoveredActivities(status = 'pending', source = '') {
   const [activities, setActivities] = useState([])
+  const [sourceRows, setSourceRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   // Read inside fetchActivities to decide whether this is a first load, without
@@ -36,8 +37,34 @@ export function useDiscoveredActivities(status = 'pending') {
       .limit(500)
 
     if (status) query = query.eq('status', status)
+    // Filtered in the QUERY, not on screen: the list is capped at 500 by
+    // confidence, and the highest-confidence feed (Better Libraries) fills nearly
+    // all of it, so most Spektrix / Lewisham / AI-found rows never loaded at all.
+    // Asking for one source returns up to 500 of that source.
+    if (source) query = query.eq('source_id', source)
 
-    const { data, error: fetchError } = await query
+    // Every row's source for this tab, lightly and uncapped (paged past
+    // PostgREST's 1,000-row limit), so the dropdown lists every source with its
+    // true count rather than only what made the 500.
+    async function loadSourceRows() {
+      const rows = []
+      for (let from = 0; ; from += 1000) {
+        let q = supabase
+          .from('activity_review_queue')
+          .select('source_id, source_name')
+          .order('id', { ascending: true })
+          .range(from, from + 999)
+        if (status) q = q.eq('status', status)
+        const { data: page, error: e } = await q
+        if (e || !page) break
+        rows.push(...page)
+        if (page.length < 1000) break
+      }
+      return rows
+    }
+
+    const [{ data, error: fetchError }, allSourceRows] = await Promise.all([query, loadSourceRows()])
+    setSourceRows(allSourceRows)
 
     if (fetchError) {
       setError(fetchError.message)
@@ -49,11 +76,11 @@ export function useDiscoveredActivities(status = 'pending') {
       activitiesRef.current = data || []
     }
     setLoading(false)
-  }, [status])
+  }, [status, source])
 
   useEffect(() => { fetchActivities() }, [fetchActivities])
 
-  return { activities, loading, error, refetch: fetchActivities }
+  return { activities, sourceRows, loading, error, refetch: fetchActivities }
 }
 
 /** Approve -> project into london_events. Returns rows written. */
