@@ -1,76 +1,90 @@
 # Feedback triage — October 2026
 
 Source: a round of feedback on the website + newsletter (three "it's hard to
-submit events" comments, plus a long email — looks like it's from Aster). 25
-distinct items. Every item below is tracked, either as a goal brief in
-`goals/15-*.md … 32-*.md` or, where it isn't code, in the
-["Not a code change"](#not-a-code-change) list. Nothing has been built yet —
-this is the backlog.
+submit events" comments, plus a long email from Aster). 25 distinct items, each
+tracked as a goal brief (`goals/done/` once built, `goals/` while open) or in the
+["Not a code change"](#not-a-code-change) list.
 
 Effort tags: **S** small · **M** medium · **L** large · **?** investigate first.
 
 ## Status — as of 2026-10-19
 
-**Shipped** (each on its own local branch `feedback/goal-NN-*`, stacked, **not
-pushed to main**): **15, 16, 17, 18, 19, 20, 22, 23, 32**. Their briefs are in
-`goals/done/`. Each built clean (`npm run build`).
+**Built — 14 goals:** 15, 16, 17, 18, 19, 20, 22, 23, 24, 25 (age), 27, 28, 31, 32.
+They sit on stacked local branches `feedback/goal-NN-*`, with
+`feedback/regression-fixes` on top (that tip holds everything). **Not pushed to
+main.**
 
-**Still open** (briefs remain in `goals/`): **21, 24, 25, 27, 28, 29, 30, 31**.
-Each needs something I can't do unattended — a live ingest run, a database
-migration against the live project, external content (photos, the correct
-Blackheath details), or a product decision — before it can be finished and
-honestly verified. See each brief, and the notes below.
+**Regression-tested.** A harness was run against `main` and the tip. It renders
+the newsletter and the WhatsApp text from fixtures, exercises every pure module,
+and re-runs each brief's Done-when.
+- Result: 36 of 39 checks pass, with **zero regressions**.
+- The 3 failures fail identically on `main`, because the checks themselves are
+  stale:
+  - 13's WhatsApp clause was superseded by 14.
+  - 05's email "spaces left" moved to the web page.
+  - The email's `<style>` is the documented reset.
+- Also run: live-data checks, rolled-back `publish_activity` tests, a live
+  email-parse test, and browser smoke tests of the public pages (no console
+  errors).
+- The review found real bugs in 15, 16, 18, 20, 22, 24, 25, 27, 28 and 32, all
+  fixed. See the `feedback/regression-fixes` commit.
 
-- **21** featured-ad on edition page — the code already renders it; needs a live
-  check of the specific week (likely an unsold slot, not a bug).
-- **24 / 31** — need additive DB migrations + a live run to verify; migration
-  files can be written but applying/verifying them touches the live project.
-- **25** one consistent form — needs the age-unit decision (months vs free text)
-  first; it's a cross-cutting refactor of three forms.
-- **27** AI poster reader — new edge function using the OpenAI vision call;
-  can't be verified here without the live function + key.
-- **28** Discovery sources — code shows the likely cause (the LLM source is run
-  first on a 150s budget against a 128s wall-clock, starving Spektrix et al.);
-  confirming + fixing needs a live ingest run and a look at the live
-  `discovery_sources` table.
-- **29** sponsor logo by URL — need to confirm the surface ("Sing" looks like a
-  What's On listing, which has no sponsor field; GPC events already take a logo
-  URL via the image field's paste fallback).
-- **30** weekly activities — needs the correct Blackheath details for the quick
-  fix, or a decision to build the admin editor.
+**Already live.** Both are backward-compatible and do nothing until the
+branches ship:
+- Migration 035 (activity admin dates).
+- The `parse-event-email` edge function, which now also reads posters.
+
+**Waiting to apply (each needs a yes).** Both were proven in a rolled-back
+transaction.
+- Migration 036: clearing an activity's admin dates left the run row live.
+- Migration 037: anyone holding the public key could read the Discovery review
+  queue.
+
+**Deploy step.** Redeploy `generate-newsletter` alongside the frontend. Vercel
+ships only the frontend, and the newsletter generator carries the same renderer
+and resolver changes as the browser preview.
+
+**Open, waiting on Aster:**
+- **21:** credit the business name on the presenting card, or was it an unsold
+  week?
+- **29:** which surface is "Sing"?
+- **30:** what are the current Blackheath details, and does she want to edit the
+  weekly activities herself?
+
+**Optional:** 25's fuller "one identical form everywhere".
 
 ## Quick wins
-| Brief | What | Items |
-|---|---|---|
-| [15](../goals/15-member-count-says-2000.md) | Say **2,000+** on the site and the newsletter | F21 |
-| [16](../goals/16-picks-card-heading-and-content.md) | "This week's **top** picks"; venue + description on **every** pick | F15, F17 |
-| [17](../goals/17-easy-event-submission.md) | Obvious submit route on the homepage + a submit link in the newsletter | F1, F2 |
-| [18](../goals/18-save-and-publish.md) | A **"Save & Publish"** button, not only "Update" → back to Pending | F7 |
-| [19](../goals/19-coffee-block-in-palette.md) | "Buy us a coffee" block addable from the editor | F19 |
+| Brief | What | Items | |
+|---|---|---|---|
+| [15](../goals/done/15-member-count-says-2000.md) | Say **2,000+** on the site and the newsletter | F21 | ✅ |
+| [16](../goals/done/16-picks-card-heading-and-content.md) | "This week's **top** picks"; venue + description on **every** pick | F15, F17 | ✅ |
+| [17](../goals/done/17-easy-event-submission.md) | Obvious submit route on the homepage + a submit link in the newsletter | F1, F2 | ✅ |
+| [18](../goals/done/18-save-and-publish.md) | A **"Save & Publish"** button, not only "Update" → back to Pending | F7 | ✅ |
+| [19](../goals/done/19-coffee-block-in-palette.md) | "Buy us a coffee" block addable from the editor | F19 | ✅ |
 
 ## Medium
-| Brief | What | Items |
-|---|---|---|
-| [20](../goals/20-advertiser-clicks-all-time.md) | Advertiser clicks: previous week + all-time per advertiser | F18 |
-| [22](../goals/22-newsletter-area-and-further-afield.md) | Stop dropping no-area listings + a "further to travel" section | F10, F11 |
-| [23](../goals/23-newsletter-pictures.md) | Upload pictures into the newsletter (+ a "what we've been up to" note) | F12 |
-| [29](../goals/29-event-sponsor-logo-by-url.md) | Sponsor logo on an event via an http link | F23 |
-| [30](../goals/30-editable-weekly-activities.md) | Edit the weekly activities (Blackheath) | F24 |
-| [32](../goals/32-newsletter-formatting-and-spellcheck.md) | Bold/italic + spell check in the composer (*flagged not essential*) | F13 |
+| Brief | What | Items | |
+|---|---|---|---|
+| [20](../goals/done/20-advertiser-clicks-all-time.md) | Advertiser clicks: previous week + all-time per advertiser | F18 | ✅ |
+| [22](../goals/done/22-newsletter-area-and-further-afield.md) | Stop dropping no-area listings + a "further to travel" section | F10, F11 | ✅ |
+| [23](../goals/done/23-newsletter-pictures.md) | Upload pictures into the newsletter (+ a "what we've been up to" note) | F12 | ✅ |
+| [29](../goals/29-event-sponsor-logo-by-url.md) | Sponsor logo on an event via an http link | F23 | waiting on Aster |
+| [30](../goals/30-editable-weekly-activities.md) | Edit the weekly activities (Blackheath) | F24 | waiting on Aster |
+| [32](../goals/done/32-newsletter-formatting-and-spellcheck.md) | Bold/italic + spell check in the composer (*flagged not essential*) | F13 | ✅ |
 
 ## Large
-| Brief | What | Items |
-|---|---|---|
-| [24](../goals/24-edit-activity-dates-and-recurrence.md) | Edit Activity can set date, date range, recurrence | F6 |
-| [25](../goals/25-one-consistent-event-form.md) | One consistent event form across all three entry points | F5 |
-| [27](../goals/27-ai-poster-reader.md) | AI poster reader — upload a poster → event | F3 |
-| [31](../goals/31-filter-within-greenwich.md) | Filter within Greenwich (peninsula, Eltham…) + define outside-Greenwich | F25 |
+| Brief | What | Items | |
+|---|---|---|---|
+| [24](../goals/done/24-edit-activity-dates-and-recurrence.md) | Edit Activity can set date, date range, recurrence | F6 | ✅ (range; recurrence deferred) |
+| [25](../goals/25-one-consistent-event-form.md) | One consistent event form across all three entry points | F5 | age part ✅; full form optional |
+| [27](../goals/done/27-ai-poster-reader.md) | AI poster reader — upload a poster → event | F3 | ✅ |
+| [31](../goals/done/31-filter-within-greenwich.md) | Filter within Greenwich (peninsula, Eltham…) + define outside-Greenwich | F25 | ✅ |
 
 ## Investigate first
-| Brief | What | Items |
-|---|---|---|
-| [21](../goals/21-featured-ad-on-edition-page.md) | Is the featured advertiser really missing from the edition page? | F20 |
-| [28](../goals/28-discovery-only-better-libraries.md) | Why Discovery leans on Better Libraries; Spektrix starved; the URL list | F4 |
+| Brief | What | Items | |
+|---|---|---|---|
+| [21](../goals/21-featured-ad-on-edition-page.md) | Is the featured advertiser really missing from the edition page? | F20 | it shows; asking Aster about crediting the name |
+| [28](../goals/done/28-discovery-only-better-libraries.md) | Why Discovery leans on Better Libraries; Spektrix starved; the URL list | F4 | ✅ (volume, not a broken feed: source filter added) |
 
 ## Not a code change
 Tracked, but handled outside the backlog:

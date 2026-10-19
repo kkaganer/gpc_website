@@ -37,15 +37,32 @@ migration history is in sync through `034`, 007 included, so no `migration repai
 is needed. `db push` only replays what remote history lacks, which is why the bare
 `CREATE TABLE` in `001` has not bitten.
 
+Applied by hand 2026-10-19 via the Management API: `035_activity_admin_dates`. It
+is NOT in remote migration history (which still ends at 034). It is idempotent, so
+a `db push` replaying it is harmless, but run `supabase migration repair --status
+applied 035` (and 036/037 once applied) to bring history back in sync.
+
 `activity_review_queue` (the Discovery screen's source) is a VIEW with an EXPLICIT
-column list, recreated by 009, 024, 025 and 032. A column the UI needs but the view
-omits fails SILENTLY — the hook calls `.select('*')`, which expands to the view's
-columns, not the table's, so the field is `undefined` on every row with no error.
-Adding a field to that screen means recreating the view, and re-issuing
+column list, recreated by 009, 024, 025, 032 and 035. A column the UI needs but the
+view omits fails SILENTLY — the hook calls `.select('*')`, which expands to the
+view's columns, not the table's, so the field is `undefined` on every row with no
+error. Adding a field to that screen means recreating the view, and re-issuing
 `grant select ... to authenticated`, which a recreated view does not inherit.
+
+A recreated view DOES pick up something else: Supabase's default privileges on
+`public` grant `anon` ALL on every new table and view, and a view runs with its
+owner's rights, so it bypasses the RLS on `activities`. Every recreate so far left
+the review queue readable by anyone with the public key. After recreating it, also
+`revoke all on activity_review_queue from anon` (see 037).
 
 ## Things that bite
 
+- **Edge functions don't ship with the site.** Vercel deploys the frontend only;
+  each Supabase function deploys separately with `supabase functions deploy
+  <name> --project-ref kwpkgcqcdygduzcqvzoa`. `newsletter-renderer.ts` and the
+  event-section query are shared with `generate-newsletter`, so a renderer or
+  resolver change needs that function redeployed too, or Generate and the editor
+  preview disagree.
 - **No test suite.** Only `npm run build`. Verification means building, plus
   grep or a node script against the specific behaviour.
 - **`vercel.json` rewrite order matters.** The SPA catch-all `/(.*)` swallows
