@@ -97,8 +97,8 @@ export default function LondonEventForm() {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault()
+  async function handleSubmit(e, { publish = false } = {}) {
+    if (e && e.preventDefault) e.preventDefault()
     setError('')
     setSaving(true)
 
@@ -122,6 +122,10 @@ export default function LondonEventForm() {
         lat,
         lng,
         day_of_week: form.day_of_week !== '' ? parseInt(form.day_of_week, 10) : null,
+        // "Save & Publish" forces the event live; a plain save keeps whatever
+        // approved state the row already had, so editing a pending event leaves
+        // it pending unless you publish.
+        ...(publish ? { approved: true } : {}),
       }
       if (isEditing) {
         const { error: updateError } = await supabase
@@ -135,7 +139,7 @@ export default function LondonEventForm() {
           .insert(payload)
         if (insertError) throw insertError
       }
-      navigate('/admin/whats-on')
+      navigate(publish ? '/admin/whats-on?tab=approved' : '/admin/whats-on')
     } catch (err) {
       // 23505 = unique violation from the duplicate guard on london_events. The raw
       // Postgres constraint text says nothing useful, so translate it. Unlike the
@@ -422,6 +426,16 @@ export default function LondonEventForm() {
           >
             {saving ? 'Saving...' : isEditing ? 'Update Event' : 'Add Event'}
           </button>
+          {isEditing && !form.approved && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => handleSubmit(null, { publish: true })}
+              className="px-6 py-3 rounded-xl border-2 border-primary text-primary font-bold text-sm hover:bg-primary/5 transition-colors disabled:opacity-50"
+            >
+              {saving ? 'Saving...' : 'Save & Publish'}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => navigate('/admin/whats-on')}

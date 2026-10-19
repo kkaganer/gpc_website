@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { Plus, Check, X, Pencil, Trash2, Sparkles, MapPin, Mail, AlertTriangle, CopyCheck, Info } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { geocodePostcode } from '../../lib/geocode'
@@ -270,7 +270,8 @@ function DuplicateBadge({ info, isRecurring }) {
 
 export default function LondonEventsManager() {
   const { events, loading, error, refetch } = useAllLondonEvents()
-  const [tab, setTab] = useState('pending')
+  const [searchParams] = useSearchParams()
+  const [tab, setTab] = useState(() => (searchParams.get('tab') === 'approved' ? 'approved' : 'pending'))
   const [selected, setSelected] = useState(() => new Set())
   const [confirmBulk, setConfirmBulk] = useState(false)
   const [deleting, setDeleting] = useState(null)

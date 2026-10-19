@@ -646,13 +646,13 @@ export default function DiscoveryManager() {
     refetch()
   }
 
-  async function handleEditSave(patch) {
+  async function handleEditSave(patch, { publish = false } = {}) {
     const row = activities.find((a) => a.id === editingId)
-    await updateActivity(editingId, patch, { status: row?.status })
+    await updateActivity(editingId, patch, { status: row?.status, publish })
     setEditingId(null)
     setMessage(
-      row?.status === 'published'
-        ? `Saved “${patch.title}” and republished it to What’s On.`
+      publish || row?.status === 'published'
+        ? `Saved “${patch.title}” and published it to What’s On.`
         : `Saved “${patch.title}”.`,
     )
     // Silent: the panel closing already unmounted; a full-page spinner here

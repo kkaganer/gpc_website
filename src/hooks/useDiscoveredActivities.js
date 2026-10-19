@@ -148,10 +148,13 @@ export async function pollBatch(batchId, onProgress, { intervalMs = 3000, timeou
  * changes the review screen and nothing the public can see — the feature would
  * look like it silently failed.
  */
-export async function updateActivity(id, patch, { status } = {}) {
+export async function updateActivity(id, patch, { status, publish } = {}) {
   const { error } = await supabase.from('activities').update(patch).eq('id', id)
   if (error) throw error
-  if (status === 'published') await publishActivity(id)
+  // An already-published row always republishes so the correction reaches
+  // london_events. `publish:true` is "Save & publish" on a pending row — save
+  // the edit and push it live in one step rather than a second click.
+  if (publish || status === 'published') await publishActivity(id)
 }
 
 /**

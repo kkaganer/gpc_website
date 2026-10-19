@@ -59,8 +59,8 @@ export default function ActivityEditPanel({ activity, onClose, onSaved }) {
     setForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault()
+  async function handleSubmit(e, { publish = false } = {}) {
+    if (e && e.preventDefault) e.preventDefault()
     setError('')
 
     const patch = buildActivityPatch(form)
@@ -82,7 +82,7 @@ export default function ActivityEditPanel({ activity, onClose, onSaved }) {
           patch.lng = coords.lng
         }
       }
-      await onSaved(patch)
+      await onSaved(patch, { publish })
     } catch (err) {
       setError(err.message || 'Failed to save.')
       setSaving(false)
@@ -331,6 +331,16 @@ export default function ActivityEditPanel({ activity, onClose, onSaved }) {
               {saving && <Loader2 size={15} className="animate-spin" />}
               {saving ? 'Saving...' : 'Save changes'}
             </button>
+            {activity.status !== 'published' && (
+              <button
+                type="button"
+                onClick={() => handleSubmit(null, { publish: true })}
+                disabled={saving}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl border-2 border-primary text-primary text-sm font-bold hover:bg-primary/5 transition-colors disabled:opacity-50"
+              >
+                Save &amp; publish
+              </button>
+            )}
             <button
               type="button"
               onClick={onClose}
