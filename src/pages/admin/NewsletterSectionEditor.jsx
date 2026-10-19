@@ -16,6 +16,7 @@ import {
   Trash2,
   GripVertical,
   AlertTriangle,
+  Coffee,
 } from 'lucide-react'
 import {
   DndContext,
@@ -447,6 +448,12 @@ export default function NewsletterSectionEditor() {
       case 'editionCta':
         block = { ...base }
         break
+      case 'donationStrip':
+        // Left blank on purpose: the renderer fills the coffee message, link
+        // label and the Zeffy donate URL by default, and the editor's fields
+        // show those as placeholders. Edit them to override.
+        block = { ...base }
+        break
       default:
         return
     }
@@ -776,6 +783,7 @@ function SectionSidebar({
             label="Guide button"
             onClick={() => onAddBlock('editionCta')}
           />
+          <AddBlockButton icon={Coffee} label="Coffee / donation" onClick={() => onAddBlock('donationStrip')} />
         </div>
       </div>
       {pendingRemoval && (
