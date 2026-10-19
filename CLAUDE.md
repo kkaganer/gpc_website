@@ -37,10 +37,11 @@ migration history is in sync through `034`, 007 included, so no `migration repai
 is needed. `db push` only replays what remote history lacks, which is why the bare
 `CREATE TABLE` in `001` has not bitten.
 
-Applied by hand 2026-10-19 via the Management API: `035_activity_admin_dates`. It
-is NOT in remote migration history (which still ends at 034). It is idempotent, so
-a `db push` replaying it is harmless, but run `supabase migration repair --status
-applied 035` (and 036/037 once applied) to bring history back in sync.
+Applied by hand 2026-10-19 via the Management API: `035`, `036` and `037`, each
+recorded in `supabase_migrations.schema_migrations` straight after, so remote
+history is in sync through `037` and no `migration repair` is needed. The
+"no upcoming dates" guard in `publish_activity` had been applied by hand earlier
+and was never in a repo migration; 035 onwards now carry it.
 
 `activity_review_queue` (the Discovery screen's source) is a VIEW with an EXPLICIT
 column list, recreated by 009, 024, 025, 032 and 035. A column the UI needs but the

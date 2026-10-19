@@ -29,16 +29,14 @@ and re-runs each brief's Done-when.
 - The review found real bugs in 15, 16, 18, 20, 22, 24, 25, 27, 28 and 32, all
   fixed. See the `feedback/regression-fixes` commit.
 
-**Already live.** Both are backward-compatible and do nothing until the
-branches ship:
+**Already live.** The backend changes are backward-compatible and do nothing
+visible until the branches ship. Migration history is in sync through 037.
 - Migration 035 (activity admin dates).
+- Migration 036 (clearing admin dates no longer leaves the run row live; a blank
+  admin time keeps the session time). Verified live.
+- Migration 037 (the Discovery review queue is no longer readable with the public
+  key). Verified live: an anonymous read now returns "permission denied".
 - The `parse-event-email` edge function, which now also reads posters.
-
-**Waiting to apply (each needs a yes).** Both were proven in a rolled-back
-transaction.
-- Migration 036: clearing an activity's admin dates left the run row live.
-- Migration 037: anyone holding the public key could read the Discovery review
-  queue.
 
 **Deploy step.** Redeploy `generate-newsletter` alongside the frontend. Vercel
 ships only the frontend, and the newsletter generator carries the same renderer
