@@ -80,6 +80,7 @@ export default function NewsletterManager() {
   )
   const [weekOf, setWeekOf] = useState(nearestFriday(todayIso()))
   const [clicks, setClicks] = useState([])
+  const [clicksRange, setClicksRange] = useState('week')
   const [slots, setSlots] = useState({ presenting: [], supporters: [] })
 
   useEffect(() => {
@@ -87,15 +88,17 @@ export default function NewsletterManager() {
     fetchDrafts()
   }, [])
 
-  // The number Tier 1 and Tier 2 advertisers were promised. Counted per edition,
-  // so it answers "how did last Friday do" rather than an all-time total.
+  // Advertiser click counts. 'week' is the number Tier 1 and Tier 2 were
+  // promised for one edition ("how did last Friday do"); 'all' is the all-time
+  // total per advertiser, across every edition.
   useEffect(() => {
     let cancelled = false
     async function fetchClicks() {
-      const { data, error } = await supabase
+      let query = supabase
         .from('advertiser_clicks')
         .select('advertiser_id, source, newsletter_advertisers(advertiser_name, ad_type)')
-        .eq('edition_date', weekOf)
+      if (clicksRange === 'week') query = query.eq('edition_date', weekOf)
+      const { data, error } = await query
       if (cancelled || error) {
         if (!cancelled && error) setClicks([])
         return
@@ -123,7 +126,7 @@ export default function NewsletterManager() {
     return () => {
       cancelled = true
     }
-  }, [weekOf])
+  }, [weekOf, clicksRange])
 
   // What is actually booked for this week, so the slots can be checked BEFORE the
   // newsletter is generated. The presenting slot holds exactly one card, so a
@@ -312,12 +315,34 @@ export default function NewsletterManager() {
           <MousePointerClick size={18} className="text-primary" />
           Advertiser clicks
         </h2>
-        <p className="text-xs text-gray-500 mb-4">
-          Week of {weekOf}. This is the weekly number promised to Tier 1 and Tier 2.
-        </p>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <p className="text-xs text-gray-500">
+            {clicksRange === 'week'
+              ? `Week of ${weekOf}. The weekly number promised to Tier 1 and Tier 2.`
+              : 'All-time total per advertiser, across every edition.'}
+          </p>
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setClicksRange('week')}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition-colors ${clicksRange === 'week' ? 'bg-white shadow-sm text-dark' : 'text-gray-500'}`}
+            >
+              This week
+            </button>
+            <button
+              type="button"
+              onClick={() => setClicksRange('all')}
+              className={`px-3 py-1 rounded-md text-xs font-bold transition-colors ${clicksRange === 'all' ? 'bg-white shadow-sm text-dark' : 'text-gray-500'}`}
+            >
+              All time
+            </button>
+          </div>
+        </div>
         {clicks.length === 0 ? (
           <p className="text-sm text-gray-500">
-            No clicks recorded for this edition yet.
+            {clicksRange === 'week'
+              ? 'No clicks recorded for this edition yet.'
+              : 'No advertiser clicks recorded yet.'}
           </p>
         ) : (
           <table className="w-full text-sm">
