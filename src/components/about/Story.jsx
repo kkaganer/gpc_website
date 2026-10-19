@@ -36,7 +36,7 @@ export default function Story() {
           </p>
 
           <p className="text-gray-700 leading-relaxed mt-4 text-lg">
-            Today, GPC is a thriving WhatsApp community of over 1,800 members,
+            Today, GPC is a thriving WhatsApp community of over 2,000 members,
             supported by 20 volunteer admins. We run weekly meetups, seasonal
             fairs, Mums in Business networking events, a free weekly What's On
             guide, and WhatsApp groups covering everything from baby groups by

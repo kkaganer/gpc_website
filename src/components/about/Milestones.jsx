@@ -40,7 +40,7 @@ const milestones = [
   },
   {
     year: '2026',
-    title: '1,800+ Members',
+    title: '2,000+ Members',
     description:
       'Our community continues to grow, with 20 volunteer admins and plans for even bigger things ahead.',
   },

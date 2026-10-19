@@ -39,6 +39,6 @@ export const ORG = {
   cicNumber: '16387545',
   tagline: 'Local parents running events and activities for local families',
   values: ['Inclusivity', 'Kindness', 'Connection'],
-  memberCount: '1,800+',
+  memberCount: '2,000+',
   foundedYear: 2021,
 };

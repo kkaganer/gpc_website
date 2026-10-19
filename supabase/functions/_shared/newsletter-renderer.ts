@@ -1038,7 +1038,7 @@ export function createRenderers(
       <tr><td align="center" style="padding:30px 32px;">
         ${eyebrow('This space', C.pinkText)}
         <div style="font-family:${F.heading};font-weight:700;font-size:22px;line-height:30px;color:${C.dark};padding-top:8px;">Want to feature your business?</div>
-        <div style="font-family:${F.body};font-size:15px;line-height:24px;color:${C.body};padding-top:8px;">One business per edition reaches 1,800+ Greenwich parents here.</div>
+        <div style="font-family:${F.body};font-size:15px;line-height:24px;color:${C.body};padding-top:8px;">One business per edition reaches 2,000+ Greenwich parents here.</div>
         <div style="padding-top:10px;">
           <a href="${href}" style="font-family:${F.body};font-weight:700;font-size:15px;line-height:44px;color:${C.pinkText};text-decoration:none;border-bottom:2px solid ${C.pink};">Talk to us about ${month} &rarr;</a>
         </div>
