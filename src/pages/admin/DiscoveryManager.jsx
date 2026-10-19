@@ -27,7 +27,7 @@ import {
 import ActivityEditPanel from '../../components/admin/ActivityEditPanel'
 import BulkFillPanel from '../../components/admin/BulkFillPanel'
 import {
-  GAPS, GAP_KEYS, filterActivities, gapCounts, planBulkFill, BULK_FILL_LABELS,
+  GAPS, GAP_KEYS, filterActivities, gapCounts, planBulkFill, BULK_FILL_LABELS, sourceOptions,
 } from '../../lib/discoveryFilters'
 import { geocodePostcode } from '../../lib/geocode'
 
@@ -459,6 +459,7 @@ export default function DiscoveryManager() {
   const [onlyLlmJudged, setOnlyLlmJudged] = useState(false)
   const [search, setSearch] = useState('')
   const [gaps, setGaps] = useState(() => new Set())
+  const [source, setSource] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   // The row the slide-over is pointed at, or null. Held as an id + the row so
@@ -475,8 +476,9 @@ export default function DiscoveryManager() {
   // the moment you ticked it could not tell you what it was hiding, and the one
   // that is on would be the only one you could never read a number for.
   const counts = gapCounts(activities)
-  // Search AND chips AND the AI-ages filter; the chips OR among themselves.
-  const visible = filterActivities(activities, { search, gaps, onlyLlmJudged })
+  const sources = sourceOptions(activities)
+  // Search AND source AND chips AND the AI-ages filter; the chips OR among themselves.
+  const visible = filterActivities(activities, { search, gaps, onlyLlmJudged, source })
   const narrowed = visible.length !== activities.length
 
   // Group AFTER filtering: with the AI-ages filter on, a group has to mean
@@ -819,6 +821,22 @@ export default function DiscoveryManager() {
           className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
         />
       </div>
+
+      {sources.length > 1 && (
+        <div className="mb-4 max-w-md">
+          <select
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            aria-label="Filter by source"
+            className="w-full py-2.5 px-3 rounded-xl border border-gray-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/50"
+          >
+            <option value="">All sources ({activities.length})</option>
+            {sources.map((s) => (
+              <option key={s.id} value={s.id}>{s.label} ({s.count})</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">

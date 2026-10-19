@@ -91,10 +91,11 @@ export function matchesGaps(row, activeGaps) {
  * The whole narrowing, in the order the UI applies it. Search AND chips AND the
  * pre-existing AI-ages filter — the chips only OR among themselves.
  */
-export function filterActivities(rows, { search = '', gaps = new Set(), onlyLlmJudged = false } = {}) {
+export function filterActivities(rows, { search = '', gaps = new Set(), onlyLlmJudged = false, source = '' } = {}) {
   return rows.filter(
     (r) =>
       (!onlyLlmJudged || r.age_basis === 'llm_judged') &&
+      (!source || r.source_id === source) &&
       matchesSearch(r, search) &&
       matchesGaps(r, gaps),
   )
@@ -105,6 +106,24 @@ export function gapCounts(rows) {
   const counts = {}
   for (const key of GAP_KEYS) counts[key] = rows.filter((r) => hasGap(r, key)).length
   return counts
+}
+
+/**
+ * The sources present in these rows, each with a count, commonest first — the
+ * options for the review screen's source filter. Better Libraries dwarfs the
+ * queue (~79% of pending), so this lets the admin jump straight to Spektrix /
+ * theatre venues instead of scrolling past hundreds of library rows.
+ */
+export function sourceOptions(rows) {
+  const byId = new Map()
+  for (const r of rows ?? []) {
+    const id = r.source_id
+    if (!id) continue
+    const entry = byId.get(id) || { id, label: r.source_name || id, count: 0 }
+    entry.count++
+    byId.set(id, entry)
+  }
+  return [...byId.values()].sort((a, b) => b.count - a.count)
 }
 
 // ---------------------------------------------------------------------------
