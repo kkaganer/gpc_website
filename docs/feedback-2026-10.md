@@ -9,6 +9,36 @@ this is the backlog.
 
 Effort tags: **S** small · **M** medium · **L** large · **?** investigate first.
 
+## Status — as of 2026-10-19
+
+**Shipped** (each on its own local branch `feedback/goal-NN-*`, stacked, **not
+pushed to main**): **15, 16, 17, 18, 19, 20, 22, 23, 32**. Their briefs are in
+`goals/done/`. Each built clean (`npm run build`).
+
+**Still open** (briefs remain in `goals/`): **21, 24, 25, 27, 28, 29, 30, 31**.
+Each needs something I can't do unattended — a live ingest run, a database
+migration against the live project, external content (photos, the correct
+Blackheath details), or a product decision — before it can be finished and
+honestly verified. See each brief, and the notes below.
+
+- **21** featured-ad on edition page — the code already renders it; needs a live
+  check of the specific week (likely an unsold slot, not a bug).
+- **24 / 31** — need additive DB migrations + a live run to verify; migration
+  files can be written but applying/verifying them touches the live project.
+- **25** one consistent form — needs the age-unit decision (months vs free text)
+  first; it's a cross-cutting refactor of three forms.
+- **27** AI poster reader — new edge function using the OpenAI vision call;
+  can't be verified here without the live function + key.
+- **28** Discovery sources — code shows the likely cause (the LLM source is run
+  first on a 150s budget against a 128s wall-clock, starving Spektrix et al.);
+  confirming + fixing needs a live ingest run and a look at the live
+  `discovery_sources` table.
+- **29** sponsor logo by URL — need to confirm the surface ("Sing" looks like a
+  What's On listing, which has no sponsor field; GPC events already take a logo
+  URL via the image field's paste fallback).
+- **30** weekly activities — needs the correct Blackheath details for the quick
+  fix, or a decision to build the admin editor.
+
 ## Quick wins
 | Brief | What | Items |
 |---|---|---|
