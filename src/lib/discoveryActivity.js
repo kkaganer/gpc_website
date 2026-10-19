@@ -35,6 +35,11 @@ export const ACTIVITY_EDITABLE_FIELDS = [
   'term_time_only',
   'lat',
   'lng',
+  // Admin-pinned dates (migration 035). publish_activity uses them to emit ONE
+  // london_events row spanning [start, end] instead of per-occurrence rows.
+  'admin_start_date',
+  'admin_end_date',
+  'admin_time',
 ]
 
 /** Never writable, for whatever reason. Exported so a check can assert on it. */
@@ -117,6 +122,9 @@ export function validateActivityPatch(patch) {
   }
   if (patch.lat != null && (patch.lat < -90 || patch.lat > 90)) errors.push('Latitude must be between -90 and 90.')
   if (patch.lng != null && (patch.lng < -180 || patch.lng > 180)) errors.push('Longitude must be between -180 and 180.')
+  if (patch.admin_start_date && patch.admin_end_date && patch.admin_end_date < patch.admin_start_date) {
+    errors.push('End date cannot be before the start date.')
+  }
   return errors
 }
 

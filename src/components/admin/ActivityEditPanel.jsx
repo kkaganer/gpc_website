@@ -278,6 +278,42 @@ export default function ActivityEditPanel({ activity, onClose, onSaved }) {
             />
           </Field>
 
+          <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-3 space-y-3">
+            <p className="text-sm font-semibold text-dark">Dates</p>
+            <p className="text-xs text-gray-400 leading-snug">
+              Pin when this runs. A start + end date publishes it as ONE listing
+              spanning the whole run (e.g. a theatre show), not just opening day.
+              Leave blank to use the discovered dates.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Start date">
+                <input
+                  type="date"
+                  value={form.admin_start_date}
+                  onChange={(e) => set('admin_start_date', e.target.value)}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="End date" hint="For a run. Blank = single day.">
+                <input
+                  type="date"
+                  value={form.admin_end_date}
+                  onChange={(e) => set('admin_end_date', e.target.value)}
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+            <Field label="Time" hint="Optional, e.g. 10:30 - 11:15">
+              <input
+                type="text"
+                value={form.admin_time}
+                onChange={(e) => set('admin_time', e.target.value)}
+                className={inputClass}
+                placeholder="e.g. 10:30 - 11:15"
+              />
+            </Field>
+          </div>
+
           <Field label="Price">
             <input
               type="text" value={form.price_text}
