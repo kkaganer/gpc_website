@@ -897,10 +897,10 @@ export function createRenderers(
       ? `<div style="font-family:${F.heading};font-weight:700;font-size:22px;line-height:29px;color:${C.dark};"${editAttr(blockId, 'title', evId)}>${escapeHtml(ev.title || '')}</div>`
       : `<div style="font-family:${F.heading};font-weight:600;font-size:18px;line-height:25px;color:${C.dark};"${editAttr(blockId, 'title', evId)}>${escapeHtml(ev.title || '')}</div>`
 
-    // The lead gets its description; the tail is title and meta only. Five equal
-    // paragraphs is a list, and the point of a picks card is that one of them is
-    // the pick.
-    const description = lead && ev.description
+    // Every pick shows its description when it has one; the lead simply gets the
+    // larger title type. Descriptions on every pick give the editor something to
+    // trim down rather than nothing to edit.
+    const description = ev.description
       ? `<div style="font-family:${F.body};font-size:15px;line-height:24px;color:${C.body};padding-top:8px;"${editAttr(blockId, 'description', evId)}>${escapeHtml(ev.description)}</div>`
       : ''
 
@@ -923,7 +923,7 @@ export function createRenderers(
 
   function renderPicksSection(block: EventSectionBlock, rows: EventData[]): string {
     if (rows.length === 0) return ''
-    const title = escapeHtml(block.title || "This week's picks")
+    const title = escapeHtml(block.title || "This week's top picks")
     return `
   <tr><td style="padding:28px 24px 6px 24px;background-color:${C.page};">
     <div style="font-family:${F.heading};font-weight:700;font-size:22px;line-height:28px;color:${C.dark};"${editAttr(block.id)}>${title}</div>

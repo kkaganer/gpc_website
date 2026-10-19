@@ -36,7 +36,7 @@ export function defaultConfig(weekOfIso: string): NewsletterConfig {
         id: uid(),
         type: 'eventSection',
         enabled: true,
-        title: "This week's picks",
+        title: "This week's top picks",
         layout: 'picks',
         limit: 5,
         mode: 'auto',

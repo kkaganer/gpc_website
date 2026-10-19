@@ -1034,7 +1034,7 @@ function BlockFields({ block, resolvedData, focusRequest, onChange, onOverrideCh
           </div>
           <p className="text-[11px] text-gray-500 leading-snug">
             {isPicks
-              ? 'The first pick gets its description; the rest are title and details only. Leave "show at most" blank to print every match.'
+              ? 'Every pick shows its description when it has one. Leave "show at most" blank to print every match.'
               : 'The long-form list, one paragraph per event. Blank means every match.'}
           </p>
           <div className="pt-2">

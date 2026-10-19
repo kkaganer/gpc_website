@@ -261,7 +261,7 @@ export default function Help() {
           </p>
           <p>
             The email is deliberately short: the presenting card, five picks, and the button
-            through to the full guide. <strong>This week&rsquo;s picks</strong> takes the first
+            through to the full guide. <strong>This week&rsquo;s top picks</strong> takes the first
             five matching events — reorder or swap them there, and change{' '}
             <strong>Show at most</strong> if a week wants more. Everything else is on the web page
             the button links to.
