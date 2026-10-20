@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import toast, { Toaster } from 'react-hot-toast'
-import { RefreshCw, Info, Search, AlertTriangle, MailX } from 'lucide-react'
-import { fetchSubscribers, retryBrevoSync } from '../../lib/adminApi'
+import { RefreshCw, Info, Search, AlertTriangle, MailX, ArrowLeftRight } from 'lucide-react'
+import { fetchSubscribers, retryEmailOctopusSync, runEmailOctopusSync } from '../../lib/adminApi'
 
 const statusStyles = {
   synced: 'bg-green-50 text-green-600',
@@ -18,18 +18,18 @@ const statusLabels = {
 }
 
 const statusHints = {
-  synced: 'Brevo confirmed this contact exists.',
-  failed: 'The write to Brevo did not land. Retry it.',
-  pending: 'Stored here but not confirmed at Brevo yet.',
-  skipped: 'The server has no Brevo API key configured, so nothing was sent.',
+  synced: 'On the EmailOctopus list.',
+  failed: 'The push to EmailOctopus did not land. Retry it, or the nightly sync will.',
+  pending: 'Stored here but not confirmed on EmailOctopus yet. The next sync checks it.',
+  skipped: 'The server has no EmailOctopus API key configured, so nothing was sent.',
 }
 
-// Where the row came from (the `source` CHECK in migration 019). With ~733
-// imported rows sitting next to 32 website sign-ups, "who is this person and
+// Where the row came from (the `source` CHECK in migration 019). With ~740
+// imported rows sitting next to the website sign-ups, "who is this person and
 // how did we get them" is a question the table has to answer at a glance.
 const sourceLabels = {
   website: 'Website form',
-  import: 'Brevo import',
+  import: 'Imported',
   backfill: 'Backfill',
   unknown: 'Unknown',
 }
@@ -43,8 +43,8 @@ const sourceStyles = {
 
 const sourceHints = {
   website: 'Signed up through the inline form on this site.',
-  import: 'Imported from Brevo, where they had signed up through the Brevo-hosted form.',
-  backfill: 'Already in our database; pushed up to Brevo by the backfill job.',
+  import: 'Imported: from Brevo (the old hosted signup form), or added at EmailOctopus directly and picked up by the sync.',
+  backfill: 'Already in our database; pushed to Brevo by the old backfill job.',
   unknown: 'No source recorded for this row.',
 }
 
@@ -55,11 +55,11 @@ function sourceKey(row) {
 }
 
 // Consent, from migration 027's `unsubscribed_at`. This is deliberately NOT a
-// status: brevo_status describes whether a sync worked, unsubscribed_at
+// status: emailoctopus_status describes whether a push worked, unsubscribed_at
 // describes a decision a person made about their own data.
 //
 //   null    -> still subscribed, safe to email
-//   a date  -> they opted out. DO NOT EMAIL, and never push them back to Brevo
+//   a date  -> they opted out. DO NOT EMAIL, and never push them back to EmailOctopus
 //   absent  -> the API did not return the column at all, so we do not know
 //
 // The third case is real and has to be handled: /api/admin/subscribers selects
@@ -79,10 +79,10 @@ function consentOf(row) {
   return row.unsubscribed_at ? CONSENT.UNSUBSCRIBED : CONSENT.SUBSCRIBED
 }
 
-// The one gate on every Brevo push from this page. Only a row we positively
-// know is still subscribed, and is not already synced, may be retried.
+// The one gate on every EmailOctopus push from this page. Only a row we
+// positively know is still subscribed, and is not already synced, may be retried.
 function canRetry(row) {
-  return consentOf(row) === CONSENT.SUBSCRIBED && row?.brevo_status !== 'synced'
+  return consentOf(row) === CONSENT.SUBSCRIBED && row?.emailoctopus_status !== 'synced'
 }
 
 const emptyCounts = { total: 0, synced: 0, failed: 0, pending: 0, skipped: 0 }
@@ -91,7 +91,7 @@ const emptyCounts = { total: 0, synced: 0, failed: 0, pending: 0, skipped: 0 }
 function countRows(rows) {
   const counts = { ...emptyCounts, total: rows.length }
   for (const row of rows) {
-    if (statusLabels[row.brevo_status]) counts[row.brevo_status] += 1
+    if (statusLabels[row.emailoctopus_status]) counts[row.emailoctopus_status] += 1
   }
   return counts
 }
@@ -130,6 +130,7 @@ export default function SubscribersManager() {
   const [error, setError] = useState(null)
   const [retryingAll, setRetryingAll] = useState(false)
   const [retryingId, setRetryingId] = useState(null)
+  const [syncing, setSyncing] = useState(false)
   const [search, setSearch] = useState('')
   const [consentFilter, setConsentFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
@@ -164,12 +165,12 @@ export default function SubscribersManager() {
   async function handleRetry(id) {
     if (retryingAll || retryingId) return
 
-    // Consent gate, checked here as well as at the button, so no path into a
-    // Brevo push skips it.
+    // Consent gate, checked here as well as at the button, so no path into an
+    // EmailOctopus push skips it.
     if (id) {
       const row = subscribers.find((s) => s.id === id)
       if (!row || !canRetry(row)) {
-        toast.error('That contact opted out, so they are never pushed back to Brevo.')
+        toast.error('That contact opted out, so they are never pushed back to EmailOctopus.')
         return
       }
       setRetryingId(id)
@@ -178,7 +179,7 @@ export default function SubscribersManager() {
     }
 
     try {
-      const result = await retryBrevoSync(id)
+      const result = await retryEmailOctopusSync(id)
       const synced = result?.synced ?? 0
       const failed = result?.failed ?? 0
       const retried = result?.retried ?? 0
@@ -186,7 +187,7 @@ export default function SubscribersManager() {
       if (retried === 0) {
         toast('Nothing to retry.')
       } else if (failed === 0) {
-        toast.success(`${plural(synced, 'subscriber')} synced to Brevo.`)
+        toast.success(`${plural(synced, 'subscriber')} added to EmailOctopus.`)
       } else if (synced === 0) {
         toast.error(`${plural(failed, 'subscriber')} still failing.`)
       } else {
@@ -197,6 +198,36 @@ export default function SubscribersManager() {
     } finally {
       setRetryingId(null)
       setRetryingAll(false)
+      await loadSubscribers()
+    }
+  }
+
+  async function handleSync() {
+    if (busy) return
+    setSyncing(true)
+    try {
+      const r = await runEmailOctopusSync()
+      const changes = [
+        r.markedUnsubscribed && `${plural(r.markedUnsubscribed, 'opt-out')} recorded`,
+        r.pushed && `${plural(r.pushed, 'sign-up')} pushed to EmailOctopus`,
+        r.unsubscribedThere && `${r.unsubscribedThere} unsubscribed there`,
+        r.inserted && `${plural(r.inserted, 'contact')} brought in from EmailOctopus`,
+      ].filter(Boolean)
+
+      if (r.conflicts?.length || r.failed || r.errors?.length) {
+        toast.error(
+          [...changes, r.failed && `${r.failed} failed`, r.conflicts?.length && `${r.conflicts.length} need a look`]
+            .filter(Boolean).join(' · ') + '. Details are in the browser console.',
+          { duration: 8000 },
+        )
+        console.warn('[subscribers] sync summary', r)
+      } else {
+        toast.success(changes.length ? changes.join(' · ') : 'Already in step with EmailOctopus.')
+      }
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSyncing(false)
       await loadSubscribers()
     }
   }
@@ -243,12 +274,12 @@ export default function SubscribersManager() {
   // unsynced AND known to still be subscribed. It is not total - synced.
   const retryable = useMemo(() => subscribers.filter(canRetry).length, [subscribers])
   const notYetSynced = counts.pending + counts.skipped
-  const busy = retryingAll || Boolean(retryingId)
+  const busy = retryingAll || syncing || Boolean(retryingId)
 
   const retryAllTitle = retryable > 0
-    ? `Retry ${plural(retryable, 'subscriber')}. Contacts who unsubscribed are excluded and are never pushed to Brevo.`
+    ? `Retry ${plural(retryable, 'subscriber')}. Contacts who unsubscribed are excluded and are never pushed to EmailOctopus.`
     : consentKnown
-      ? 'Nothing to retry — every contact who can be emailed is already in Brevo.'
+      ? 'Nothing to retry — every contact who can be emailed is already on EmailOctopus.'
       : 'Disabled: we cannot tell who has opted out until the admin API returns the unsubscribed_at column.'
 
   const tiles = [
@@ -260,9 +291,9 @@ export default function SubscribersManager() {
       valueClass: 'text-dark',
     },
     {
-      label: 'In Brevo',
+      label: 'On EmailOctopus',
       value: counts.synced,
-      hint: 'Brevo confirmed the contact',
+      hint: 'Confirmed on the sending list',
       boxClass: 'bg-white border-gray-100',
       valueClass: counts.synced > 0 ? 'text-green-600' : 'text-gray-400',
     },
@@ -288,26 +319,35 @@ export default function SubscribersManager() {
         <div>
           <h1 className="font-heading text-2xl font-bold text-dark">Subscribers</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Everyone in our database — website sign-ups and the contacts imported from Brevo — and
-            whether we may still email them
+            Everyone in our database, whether we may still email them, and whether they are on
+            the EmailOctopus list we send from
           </p>
         </div>
-        {/*
-          Unsubscribed rows are excluded from this count. NOTE for whoever owns
-          /api/admin/subscribers: the bulk retry there selects on
-          `.neq('brevo_status', 'synced')` alone, so it must also filter
-          `.is('unsubscribed_at', null)` — otherwise this exclusion is only a
-          label on a button and the server still pushes opted-out people.
-        */}
-        <button
-          onClick={() => handleRetry()}
-          disabled={busy || retryable === 0 || loading}
-          title={retryAllTitle}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-primary to-dark text-white text-sm font-bold hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:hover:scale-100"
-        >
-          <RefreshCw size={18} className={retryingAll ? 'animate-spin' : ''} />
-          {retryingAll ? 'Retrying...' : `Retry all unsynced${retryable > 0 ? ` (${retryable})` : ''}`}
-        </button>
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          <button
+            onClick={handleSync}
+            disabled={busy || loading}
+            title="Run the nightly two-way sync now: record anyone who unsubscribed at EmailOctopus, and add anyone missing from the list."
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 bg-white text-dark text-sm font-bold hover:border-primary hover:text-[#d1067f] transition-colors disabled:opacity-50"
+          >
+            <ArrowLeftRight size={18} className={syncing ? 'animate-pulse' : ''} />
+            {syncing ? 'Syncing...' : 'Sync with EmailOctopus'}
+          </button>
+          {/*
+            Unsubscribed rows are excluded from this count, and the server's bulk
+            retry filters `.is('unsubscribed_at', null)` itself, so the exclusion
+            is enforced where the set is picked, not only on this button.
+          */}
+          <button
+            onClick={() => handleRetry()}
+            disabled={busy || retryable === 0 || loading}
+            title={retryAllTitle}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-primary to-dark text-white text-sm font-bold hover:scale-[1.02] transition-transform disabled:opacity-50 disabled:hover:scale-100"
+          >
+            <RefreshCw size={18} className={retryingAll ? 'animate-spin' : ''} />
+            {retryingAll ? 'Retrying...' : `Retry all unsynced${retryable > 0 ? ` (${retryable})` : ''}`}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -325,7 +365,7 @@ export default function SubscribersManager() {
       {/*
         Fail loud rather than guess. If the admin API is not returning
         unsubscribed_at, every row reads as "unknown" and this page refuses to
-        push anyone to Brevo, because it cannot prove they did not opt out.
+        push anyone to EmailOctopus, because it cannot prove they did not opt out.
       */}
       {!loading && !error && !consentKnown && subscribers.length > 0 && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
@@ -335,9 +375,9 @@ export default function SubscribersManager() {
           </p>
           <p className="mt-1 leading-relaxed">
             The admin API is not returning the <code className="font-mono">unsubscribed_at</code>{' '}
-            column, so we cannot tell who has unsubscribed. Sending to this list, or retrying a
-            Brevo sync, could reach people who opted out — so retry is switched off until that
-            column comes through.
+            column, so we cannot tell who has unsubscribed. Sending to this list, or retrying an
+            EmailOctopus push, could reach people who opted out — so retry is switched off until
+            that column comes through.
           </p>
         </div>
       )}
@@ -380,29 +420,34 @@ export default function SubscribersManager() {
         </>
       )}
 
-      {/* Two signup paths exist — they now both land here, but not at the same moment. */}
-      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 mb-6">
+      {/* How the two lists stay in step — the answer to "is everyone on EmailOctopus?". */}
+      <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-6">
         <h2 className="font-heading font-semibold text-dark text-sm mb-3 flex items-center gap-2">
-          <Info size={16} className="text-amber-600 shrink-0" />
-          There are two ways people sign up
+          <Info size={16} className="text-[#d1067f] shrink-0" />
+          How this list stays in step with EmailOctopus
         </h2>
         <ul className="space-y-2.5 text-sm text-gray-700">
           <li className="flex items-start gap-2">
-            <span className="text-amber-600 shrink-0">•</span>
+            <span className="text-[#d1067f] shrink-0">•</span>
             <span className="leading-relaxed">
-              The <strong>inline form on the homepage</strong> saves to our database first, then sends
-              the contact to Brevo. Those arrive here immediately, marked{' '}
-              <strong>Website form</strong>.
+              <strong>Sign-ups:</strong> every newsletter form on the site saves the email here first,
+              then adds it to the EmailOctopus list straight away.
             </span>
           </li>
           <li className="flex items-start gap-2">
-            <span className="text-amber-600 shrink-0">•</span>
+            <span className="text-[#d1067f] shrink-0">•</span>
             <span className="leading-relaxed">
-              The <strong>Brevo-hosted form</strong> linked from the Home and Events pages posts
-              straight to Brevo and never touches our database. Those contacts are here because they
-              were <strong>imported from Brevo</strong>, and they carry that source — but a sign-up
-              made through that form <strong>after</strong> the last import will not appear until the
-              next one runs.
+              <strong>Unsubscribes:</strong> when someone unsubscribes from an email (or is deleted,
+              bounces or marks it as spam), EmailOctopus tells the site and they are marked{' '}
+              <strong>Unsubscribed</strong> here within seconds.
+            </span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-[#d1067f] shrink-0">•</span>
+            <span className="leading-relaxed">
+              <strong>Every night</strong> a sync compares both lists, adds anyone missing and records
+              any opt-out the instant update missed. <strong>Sync with EmailOctopus</strong> runs it
+              now. Nobody who unsubscribed is ever added back automatically.
             </span>
           </li>
         </ul>
@@ -464,14 +509,14 @@ export default function SubscribersManager() {
             <table className="w-full text-sm">
               <caption className="sr-only">
                 Newsletter subscribers stored in our database, where each came from, whether they
-                have opted out, and the status of their sync to Brevo.
+                have opted out, and whether they are on the EmailOctopus list.
               </caption>
               <thead>
                 <tr className="border-b border-gray-100">
                   <th scope="col" className="text-left px-6 py-4 font-semibold text-gray-500 text-xs uppercase">Email</th>
                   <th scope="col" className="text-left px-6 py-4 font-semibold text-gray-500 text-xs uppercase">Source</th>
                   <th scope="col" className="text-left px-6 py-4 font-semibold text-gray-500 text-xs uppercase">Signed Up</th>
-                  <th scope="col" className="text-left px-6 py-4 font-semibold text-gray-500 text-xs uppercase">Brevo Status</th>
+                  <th scope="col" className="text-left px-6 py-4 font-semibold text-gray-500 text-xs uppercase">EmailOctopus</th>
                   <th scope="col" className="text-left px-6 py-4 font-semibold text-gray-500 text-xs uppercase">Attempts</th>
                   <th scope="col" className="text-right px-6 py-4 font-semibold text-gray-500 text-xs uppercase">Actions</th>
                 </tr>
@@ -498,7 +543,7 @@ export default function SubscribersManager() {
                         {optedOut && (
                           <span
                             className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold uppercase tracking-wider bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full"
-                            title={`This person opted out${s.unsubscribed_at ? ` on ${formatDate(s.unsubscribed_at)}` : ''}. Do not email them, and do not push them back to Brevo. The row is kept so a future import can never re-add them.`}
+                            title={`This person opted out${s.unsubscribed_at ? ` on ${formatDate(s.unsubscribed_at)}` : ''}. Do not email them, and do not push them back to EmailOctopus. The row is kept so a future import can never re-add them.`}
                           >
                             <MailX size={11} className="shrink-0" />
                             Unsubscribed — do not email
@@ -512,12 +557,12 @@ export default function SubscribersManager() {
                             Opt-out unknown
                           </span>
                         )}
-                        {s.brevo_error && (
+                        {s.emailoctopus_error && (
                           <p
                             className="text-xs text-red-500 mt-1 max-w-xs truncate"
-                            title={s.brevo_error}
+                            title={s.emailoctopus_error}
                           >
-                            {s.brevo_error}
+                            {s.emailoctopus_error}
                           </p>
                         )}
                       </td>
@@ -532,43 +577,43 @@ export default function SubscribersManager() {
                       <td className="px-6 py-4 text-gray-600 whitespace-nowrap">{formatDate(s.subscribed_at)}</td>
                       <td className="px-6 py-4">
                         <span
-                          className={`text-xs font-bold px-2 py-0.5 rounded-full ${statusStyles[s.brevo_status] || 'bg-gray-100 text-gray-500'}`}
+                          className={`text-xs font-bold px-2 py-0.5 rounded-full ${statusStyles[s.emailoctopus_status] || 'bg-gray-100 text-gray-500'}`}
                           title={
-                            s.brevo_status === 'synced' && s.brevo_synced_at
-                              ? `Synced ${formatDateTime(s.brevo_synced_at)}`
-                              : statusHints[s.brevo_status] || ''
+                            s.emailoctopus_status === 'synced' && s.emailoctopus_synced_at
+                              ? `Synced ${formatDateTime(s.emailoctopus_synced_at)}`
+                              : statusHints[s.emailoctopus_status] || ''
                           }
                         >
-                          {statusLabels[s.brevo_status] || s.brevo_status}
+                          {statusLabels[s.emailoctopus_status] || s.emailoctopus_status}
                         </span>
                       </td>
                       <td
                         className="px-6 py-4 text-gray-600"
-                        title={`Last attempt: ${formatDateTime(s.brevo_last_attempt_at)}`}
+                        title={`Last attempt: ${formatDateTime(s.emailoctopus_last_attempt_at)}`}
                       >
-                        {s.brevo_attempts ?? 0}
+                        {s.emailoctopus_attempts ?? 0}
                       </td>
                       <td className="px-6 py-4 text-right">
                         {/*
                           No retry button for an opted-out row — not a disabled
-                          one, none at all. Re-pushing them to Brevo is the exact
+                          one, none at all. Re-pushing them to EmailOctopus is the exact
                           thing the consent record exists to prevent.
                         */}
                         {canRetry(s) && (
                           <button
                             onClick={() => handleRetry(s.id)}
                             disabled={busy}
-                            aria-label={`Retry Brevo sync for ${s.email}`}
+                            aria-label={`Retry EmailOctopus push for ${s.email}`}
                             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs font-bold hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors disabled:opacity-50"
                           >
                             <RefreshCw size={14} className={retryingId === s.id ? 'animate-spin' : ''} />
                             {retryingId === s.id ? 'Retrying...' : 'Retry'}
                           </button>
                         )}
-                        {optedOut && s.brevo_status !== 'synced' && (
+                        {optedOut && s.emailoctopus_status !== 'synced' && (
                           <span
                             className="text-xs text-gray-400"
-                            title="They opted out, so this row is never pushed to Brevo — by this button or by Retry all."
+                            title="They opted out, so this row is never pushed to EmailOctopus — by this button, Retry all, or the sync."
                           >
                             Not sent
                           </span>
@@ -620,7 +665,7 @@ export default function SubscribersManager() {
                   Unsubscribed
                 </span>
               </dt>
-              <dd>They opted out. Never email them and never re-add them to Brevo.</dd>
+              <dd>They opted out. Never email them and never re-add them to EmailOctopus.</dd>
             </div>
           </dl>
         </>

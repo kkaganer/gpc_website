@@ -283,17 +283,17 @@ export default function Help() {
           </p>
         </Step>
 
-        <Step n={6} title="Copy the HTML and send it from Brevo" icon={Copy}>
+        <Step n={6} title="Copy the HTML and send it from EmailOctopus" icon={Copy}>
           <p>
-            Press <strong>Copy HTML</strong> on the draft, then paste it into a Brevo campaign as
-            the message body and send it to the subscriber list.
+            Press <strong>Copy HTML</strong> on the draft, then paste it into an EmailOctopus
+            campaign as the message body and send it to the Audience list.
           </p>
           <p>
             Send yourself a test first. Three things only a test can show you: the{' '}
             <strong>See all N events</strong> button goes to this week&rsquo;s page, one pick link
             opens the right event, and <strong>Unsubscribe</strong> is a working link rather than
             the words <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
-              {'{{ unsubscribe }}'}
+              {'{{UnsubscribeURL}}'}
             </code>{' '}
             printed on the page. That last one is the provider substituting its own tag, and it can
             only be checked in a real send.
@@ -303,9 +303,10 @@ export default function Help() {
           </p>
           <Note tone="warn">
             <AlertTriangle size={15} className="inline mr-1.5 -mt-0.5" />
-            <strong>Nothing in this admin sends email.</strong> Brevo holds a copy of the
-            subscriber list for sending; Supabase is the source of truth. The send happens in
-            Brevo and nowhere else.
+            <strong>Nothing in this admin sends email.</strong> EmailOctopus holds a copy of the
+            subscriber list for sending; Supabase is the source of truth, and the two are kept in
+            step automatically (see Subscribers). The send happens in EmailOctopus and nowhere
+            else.
           </Note>
         </Step>
 

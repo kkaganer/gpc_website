@@ -1,7 +1,8 @@
-import { Fragment, useState } from 'react'
+import { Fragment } from 'react'
 import { useParams, Link } from 'react-router'
-import { ORG, NEWSLETTER } from '../utils/constants'
+import { ORG, CONTACT } from '../utils/constants'
 import { useEdition } from '../hooks/useEdition'
+import { useNewsletterSignup } from '../hooks/useNewsletterSignup'
 import {
   groupEvents,
   regularsGroup,
@@ -248,33 +249,7 @@ function BeyondThisWeek() {
 }
 
 function SubscribeCard() {
-  const [email, setEmail] = useState('')
-  const [status, setStatus] = useState('idle')
-  const [message, setMessage] = useState('')
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    setStatus('submitting')
-    setMessage('')
-    try {
-      const res = await fetch('/api/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setMessage(data.error || 'Something went wrong. Try again.')
-        setStatus('error')
-        return
-      }
-      setEmail('')
-      setStatus('success')
-    } catch {
-      setMessage('Something went wrong. Try again.')
-      setStatus('error')
-    }
-  }
+  const { email, setEmail, status, error, submit } = useNewsletterSignup()
 
   return (
     <div className="bg-[#fffbeb] rounded-2xl p-5">
@@ -282,12 +257,19 @@ function SubscribeCard() {
         Get this every Friday
       </div>
       <p className="text-sm leading-relaxed text-gray-600 mt-2 mb-3.5">One email a week. Nothing else.</p>
-      {status === 'success' ? (
+      {status === 'success' || status === 'already' ? (
         <p className="text-sm font-bold text-dark">
-          You&apos;re in. Check your inbox to confirm.
+          {status === 'already'
+            ? 'You’re already on the list. See you Friday.'
+            : 'You’re in. The next one lands on Friday.'}
+        </p>
+      ) : status === 'optedOut' ? (
+        <p className="text-sm text-dark">
+          You unsubscribed from this address before, so we haven&rsquo;t re-added it. To rejoin,
+          email <a href={`mailto:${CONTACT.email}`} className="underline font-bold">{CONTACT.email}</a>.
         </p>
       ) : (
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={submit}>
           <label htmlFor="edition-subscribe" className="sr-only">
             Email address
           </label>
@@ -308,13 +290,7 @@ function SubscribeCard() {
             {status === 'submitting' ? 'Joining…' : `Join ${ORG.memberCount} parents`}
           </button>
           {status === 'error' && (
-            <p className="text-xs text-red-600 mt-2">
-              {message}{' '}
-              <a href={NEWSLETTER.hostedFormUrl} className="underline" target="_blank" rel="noopener noreferrer">
-                Sign up here instead
-              </a>
-              .
-            </p>
+            <p className="text-xs text-red-600 mt-2">{error}</p>
           )}
         </form>
       )}

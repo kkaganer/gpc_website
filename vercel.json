@@ -1,4 +1,10 @@
 {
+  "crons": [
+    {
+      "path": "/api/emailoctopus-sync",
+      "schedule": "0 4 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",

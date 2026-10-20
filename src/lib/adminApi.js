@@ -45,7 +45,7 @@ export async function deleteAdminUser(userId) {
 }
 
 // Returns the whole payload, not just the rows — the counts are what tell the
-// admin at a glance how many signups never reached Brevo.
+// admin at a glance how many signups never reached EmailOctopus.
 export async function fetchSubscribers() {
   const res = await fetch('/api/admin/subscribers', { headers: await authHeaders() })
   const data = await parseResponse(res)
@@ -55,13 +55,26 @@ export async function fetchSubscribers() {
 
 // Called with an id, retries that one subscriber. Called with no argument, it
 // retries every row that is not already synced.
-export async function retryBrevoSync(id) {
+export async function retryEmailOctopusSync(id) {
   const res = await fetch('/api/admin/subscribers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
     body: JSON.stringify({ action: 'retry', ...(id ? { id } : {}) }),
   })
   const data = await parseResponse(res)
-  if (!res.ok) throw new Error(data.error || 'Failed to retry Brevo sync')
+  if (!res.ok) throw new Error(data.error || 'Failed to retry EmailOctopus sync')
+  return data
+}
+
+// The full two-way sync the nightly job runs: records opt-outs made at
+// EmailOctopus, pushes anything missing, and returns a summary of counts.
+export async function runEmailOctopusSync() {
+  const res = await fetch('/api/admin/subscribers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    body: JSON.stringify({ action: 'sync' }),
+  })
+  const data = await parseResponse(res)
+  if (!res.ok) throw new Error(data.error || 'Sync with EmailOctopus failed')
   return data
 }

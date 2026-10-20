@@ -1,56 +1,13 @@
-import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Mail, CheckCircle2 } from 'lucide-react'
-import { NEWSLETTER, ORG } from '../../utils/constants'
+import { CONTACT, ORG } from '../../utils/constants'
+import { useNewsletterSignup } from '../../hooks/useNewsletterSignup'
 
-// Inline signup path: posts to /api/subscribe, which stores the email in Supabase and
-// then tries to push it to Brevo. A 200 only means the row was stored — the `brevo`
-// field says whether the Brevo write actually landed, so we never claim success for it.
+// Inline signup strip at the top of the homepage. The flow itself lives in
+// useNewsletterSignup, shared with every other newsletter form on the site.
 export default function NewsletterBanner() {
-  const [email, setEmail] = useState('')
-  const [status, setStatus] = useState('idle') // idle | submitting | success | partial | error
-  const [alreadySubscribed, setAlreadySubscribed] = useState(false)
-  const [errorMessage, setErrorMessage] = useState('')
-  const [fallbackUrl, setFallbackUrl] = useState(NEWSLETTER.hostedFormUrl)
-
-  async function handleSubmit(e) {
-    e.preventDefault()
-    setStatus('submitting')
-    setErrorMessage('')
-    setAlreadySubscribed(false)
-
-    try {
-      const res = await fetch('/api/subscribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      })
-
-      // An edge failure can return HTML or an empty body, so never assume JSON.
-      const data = await res.json().catch(() => ({}))
-
-      if (!res.ok) {
-        setErrorMessage(data.error || 'Something went wrong. Try again.')
-        setStatus('error')
-        return
-      }
-
-      if (data.brevo === 'synced') {
-        setAlreadySubscribed(Boolean(data.alreadySubscribed))
-        setStatus('success')
-        setEmail('')
-        return
-      }
-
-      // Stored with us, but Brevo did not take it. Point them at the hosted form and
-      // keep what they typed so they are not asked to retype it.
-      setFallbackUrl(data.fallbackUrl || NEWSLETTER.hostedFormUrl)
-      setStatus('partial')
-    } catch {
-      setErrorMessage('Something went wrong. Try again.')
-      setStatus('error')
-    }
-  }
+  const { email, setEmail, status, error, submit } = useNewsletterSignup()
+  const done = status === 'success' || status === 'already' || status === 'optedOut'
 
   return (
     <motion.section
@@ -66,8 +23,8 @@ export default function NewsletterBanner() {
           Stay in the loop. Join {ORG.memberCount} Greenwich parents
         </p>
 
-        {status !== 'success' && (
-          <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+        {!done && (
+          <form onSubmit={submit} className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
             <input
               type="email"
               value={email}
@@ -87,29 +44,27 @@ export default function NewsletterBanner() {
         )}
 
         <div role="status" aria-live="polite">
-          {status === 'success' && (
+          {(status === 'success' || status === 'already') && (
             <span className="flex items-center gap-2 text-green-400 text-sm font-semibold">
               <CheckCircle2 size={16} />
-              {alreadySubscribed ? "You're already on the list!" : "You're subscribed!"}
+              {status === 'already' ? "You're already on the list!" : "You're subscribed!"}
             </span>
           )}
 
-          {status === 'partial' && (
+          {status === 'optedOut' && (
             <span className="text-amber-300 text-xs">
-              We've got your email, but couldn't finish signing you up —{' '}
+              You unsubscribed from this address before, so we haven't re-added it. To rejoin, email{' '}
               <a
-                href={fallbackUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={`mailto:${CONTACT.email}`}
                 className="underline font-semibold text-amber-200 hover:text-white focus:ring-2 focus:ring-amber-300 focus:outline-none"
               >
-                complete it here
+                {CONTACT.email}
               </a>
             </span>
           )}
 
           {status === 'error' && (
-            <span className="text-red-400 text-xs">{errorMessage}</span>
+            <span className="text-red-400 text-xs">{error}</span>
           )}
         </div>
       </div>

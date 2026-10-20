@@ -35,7 +35,7 @@ const quickLinks = [
   {
     to: '/admin/newsletter',
     label: 'Newsletter',
-    description: 'Generate weekly newsletters, edit them visually by clicking any text, then copy the HTML to paste into Brevo.',
+    description: 'Generate weekly newsletters, edit them visually by clicking any text, then copy the HTML to paste into EmailOctopus.',
     icon: Newspaper,
     color: 'bg-blue-50 text-blue-600',
   },
@@ -49,7 +49,7 @@ const quickLinks = [
   {
     to: '/admin/subscribers',
     label: 'Subscribers',
-    description: 'List everyone who signed up to the newsletter and see whether each one reached Brevo.',
+    description: 'List everyone who signed up to the newsletter, who has unsubscribed, and whether each one is on the EmailOctopus list.',
     icon: MailCheck,
     color: 'bg-rose-50 text-rose-600',
   },
@@ -68,10 +68,10 @@ const tips = [
   "The What's On section has a Discover feature to find London events automatically.",
   'Advertiser statuses track the full pipeline: Pending, Confirmed, Included, Completed.',
   'GPC-hosted events (titles containing "GPC") get a yellow highlight in the newsletter automatically.',
-  'Signups from the inline form on the homepage are tracked in Subscribers; the Brevo-hosted form links straight out to Brevo, so those signups only ever appear in Brevo itself.',
+  'Every newsletter form on the site saves to Subscribers and adds the person to EmailOctopus; unsubscribes made in EmailOctopus flow back automatically.',
 ]
 
-// Newsletter help — step-by-step walkthrough for the full flow from empty draft to Brevo.
+// Newsletter help — step-by-step walkthrough for the full flow from empty draft to EmailOctopus.
 const newsletterSteps = [
   {
     icon: Sparkles,
@@ -125,11 +125,11 @@ const newsletterSteps = [
   },
   {
     icon: Copy,
-    title: 'Copy HTML and paste into Brevo',
+    title: 'Copy HTML and paste into EmailOctopus',
     body: (
       <>
         When you&rsquo;re ready, click <strong>Copy HTML</strong> in the top bar. Open a new
-        campaign in Brevo, pick the <strong>Paste HTML</strong> option, and paste. Send a test
+        campaign in EmailOctopus, choose to paste your own HTML, and paste. Send a test
         email to yourself first to check it looks right, then schedule or send.
       </>
     ),
@@ -245,7 +245,7 @@ export default function Dashboard() {
           <h2 className="font-heading text-lg font-semibold text-dark">How to build a newsletter</h2>
         </div>
         <p className="text-sm text-gray-500 mb-5">
-          The five steps below take you from an empty draft to HTML ready to paste into Brevo.
+          The five steps below take you from an empty draft to HTML ready to paste into EmailOctopus.
         </p>
         <div className="bg-white rounded-2xl border border-gray-100 divide-y divide-gray-100">
           {newsletterSteps.map(({ icon: Icon, title, body }, i) => (

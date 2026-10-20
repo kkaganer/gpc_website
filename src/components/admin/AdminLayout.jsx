@@ -10,7 +10,7 @@ const sidebarLinks = [
   { to: '/admin/discovery', label: 'Discovery', icon: Radar },
   { to: '/admin/newsletter', label: 'Newsletter', icon: Newspaper },
   { to: '/admin/newsletter-advertisers', label: 'Advertisers', icon: Megaphone },
-  // Where Brevo sync failures surface: every inline signup is listed here with its sync status.
+  // Where EmailOctopus sync failures surface: every signup is listed here with its sync status.
   { to: '/admin/subscribers', label: 'Subscribers', icon: MailCheck },
   { to: '/admin/users', label: 'Users', icon: Users },
   // Last in the list on purpose: you go looking for it, you don't pass through it.

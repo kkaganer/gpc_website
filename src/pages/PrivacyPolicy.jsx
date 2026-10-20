@@ -54,7 +54,7 @@ export default function PrivacyPolicy() {
           <h2 className="font-heading font-bold text-dark text-xl mb-2">Third parties</h2>
           <ul className="list-disc pl-6 space-y-1">
             <li><strong>Supabase</strong> - stores event and website data.</li>
-            <li><strong>Brevo (Sendinblue)</strong> - sends our newsletter.</li>
+            <li><strong>EmailOctopus</strong> - sends our newsletter.</li>
             <li><strong>Eventbrite / ticketing partners</strong> - processes event bookings where used.</li>
           </ul>
         </section>

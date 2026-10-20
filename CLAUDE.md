@@ -1,6 +1,7 @@
 # GPC website
 
-Vite + React 19 SPA on Vercel, Supabase for data, Brevo for newsletter contacts.
+Vite + React 19 SPA on Vercel, Supabase for data, EmailOctopus for sending the
+newsletter. Brevo is no longer used.
 Project ref: `kwpkgcqcdygduzcqvzoa`.
 
 ## Database migrations
@@ -41,7 +42,9 @@ Applied by hand 2026-10-19 via the Management API: `035`, `036` and `037`, each
 recorded in `supabase_migrations.schema_migrations` straight after, so remote
 history is in sync through `037` and no `migration repair` is needed. The
 "no upcoming dates" guard in `publish_activity` had been applied by hand earlier
-and was never in a repo migration; 035 onwards now carry it.
+and was never in a repo migration; 035 onwards now carry it. `038` (EmailOctopus
+sync columns) was applied and recorded the same way on 2026-10-20, so history is
+in sync through `038`.
 
 `activity_review_queue` (the Discovery screen's source) is a VIEW with an EXPLICIT
 column list, recreated by 009, 024, 025, 032 and 035. A column the UI needs but the
@@ -74,8 +77,17 @@ the review queue readable by anyone with the public key. After recreating it, al
 - **Email HTML is not web HTML.** `supabase/functions/_shared/newsletter-renderer.ts`
   uses tables, inline styles and explicit `bgcolor` deliberately. No flexbox,
   no grid, no `<style>` block, no webfonts without a fallback stack.
-- **Brevo is contact sync only.** It does not send. Supabase is the source of
-  truth for subscribers; Brevo holds a copy.
+- **Subscribers: Supabase is the source of truth, EmailOctopus the sending copy.**
+  Every push goes through `api/_lib/emailoctopus.js`; the two-way rules live in
+  `api/_lib/subscriber-sync.js`. Signups push create-only (a 409 leaves the
+  contact untouched, so a form can never re-subscribe someone who left).
+  Unsubscribes flow back by webhook (`api/emailoctopus-webhook.js`) and a nightly
+  Vercel cron (`api/emailoctopus-sync.js`, 04:00 UTC). Nothing automatic ever
+  clears `unsubscribed_at`. Vercel env: `EMAILOCTOPUS_API_KEY`,
+  `EMAILOCTOPUS_WEBHOOK_SECRET`, `CRON_SECRET`. The brevo_* columns are history.
+- **PostgREST returns at most 1000 rows per request here** (`max_rows`), silently,
+  whatever `.limit()` says. `newsletter_subscribers` is past 790 rows; page with
+  `.range()` (see `readAllSubscribers`) for anything that must see every row.
 
 ## Design system
 
